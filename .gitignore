@@ -1,0 +1,32 @@
+# Banco de dados local
+*.db
+*.db-shm
+*.db-wal
+
+# Dados sensíveis
+*.xlsx
+*.xls
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
