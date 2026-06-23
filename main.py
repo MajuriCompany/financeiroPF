@@ -151,19 +151,25 @@ async def root():
 async def list_transactions(
     month: Optional[int] = None,
     year: Optional[int] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     type: Optional[str] = None,
     category: Optional[str] = None,
     responsible: Optional[str] = None,
     payment_method: Optional[str] = None,
     search: Optional[str] = None,
     invalid_only: bool = False,
+    sort_by: str = "date",
+    sort_order: str = "desc",
     page: int = 1,
     per_page: int = 20,
     db: Session = Depends(get_db),
 ):
     q = db.query(Transaction)
 
-    if month and year:
+    if date_from and date_to:
+        q = q.filter(Transaction.date >= date_from, Transaction.date <= date_to)
+    elif month and year:
         q = _month_filter(q, month, year)
     elif year:
         q = q.filter(func.strftime("%Y", Transaction.date) == str(year))
@@ -182,12 +188,12 @@ async def list_transactions(
         q = q.filter(Transaction.amount_invalid == True)
 
     total = q.count()
-    items = (
-        q.order_by(Transaction.date.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
-    )
+    sort_col = Transaction.amount if sort_by == "amount" else Transaction.date
+    if sort_order == "asc":
+        q = q.order_by(sort_col.asc().nulls_last())
+    else:
+        q = q.order_by(sort_col.desc().nulls_first())
+    items = q.offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "items": [_tx_dict(t) for t in items],
@@ -346,6 +352,7 @@ async def get_summary(month: int, year: int, db: Session = Depends(get_db)):
 
     total_income = sum(t.amount for t in curr if t.type == "income")
     total_expense = sum(t.amount for t in curr if t.type == "expense")
+    total_investment = sum(t.amount for t in curr if t.type == "investment")
     prev_expense = sum(t.amount for t in prev if t.type == "expense")
     prev_income = sum(t.amount for t in prev if t.type == "income")
 
@@ -376,6 +383,7 @@ async def get_summary(month: int, year: int, db: Session = Depends(get_db)):
         "balance": round(total_income - total_expense, 2),
         "by_responsible": {k: round(v, 2) for k, v in by_resp.items()},
         "by_category": by_cat_list,
+        "total_investment": round(total_investment, 2),
         "invalid_count": invalid_count,
         "transaction_count": len(curr),
         "prev_month_expense": round(prev_expense, 2),
@@ -460,10 +468,14 @@ async def get_report(month: int, year: int, db: Session = Depends(get_db)):
 async def export_csv(
     month: Optional[int] = None,
     year: Optional[int] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(Transaction)
-    if month and year:
+    if date_from and date_to:
+        q = q.filter(Transaction.date >= date_from, Transaction.date <= date_to)
+    elif month and year:
         q = _month_filter(q, month, year)
     elif year:
         q = q.filter(func.strftime("%Y", Transaction.date) == str(year))
@@ -497,3 +509,31 @@ async def export_csv(
         media_type="text/csv; charset=utf-8-sig",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Evolution ──────────────────────────────────────────────────────────────────
+
+
+@app.get("/api/evolution")
+async def get_evolution(months: int = 6, db: Session = Depends(get_db)):
+    from datetime import date as date_cls
+    today = date_cls.today()
+    ABBR = ["", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+            "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    result = []
+    for i in range(months - 1, -1, -1):
+        idx = today.year * 12 + (today.month - 1) - i
+        y, m = idx // 12, idx % 12 + 1
+        txs = (
+            _month_filter(db.query(Transaction), m, y)
+            .filter(Transaction.amount_invalid == False, Transaction.amount.isnot(None))
+            .all()
+        )
+        result.append({
+            "month": m, "year": y,
+            "label": f"{ABBR[m]}/{str(y)[2:]}",
+            "income": round(sum(t.amount for t in txs if t.type == "income"), 2),
+            "expense": round(sum(t.amount for t in txs if t.type == "expense"), 2),
+            "investment": round(sum(t.amount for t in txs if t.type == "investment"), 2),
+        })
+    return result

@@ -10,16 +10,19 @@ const _txCache = {};
 const now = new Date();
 const state = {
   view: 'dashboard',
-  dash: { month: now.getMonth() + 1, year: now.getFullYear() },
+  dash: { month: now.getMonth() + 1, year: now.getFullYear(), evo_months: 6 },
   tx: {
     month: now.getMonth() + 1,
     year: now.getFullYear(),
+    period: '',
     type: '',
     category: '',
     responsible: '',
     payment_method: '',
     search: '',
     invalid_only: false,
+    sort_by: 'date',
+    sort_order: 'desc',
     page: 1,
     perPage: 20,
   },
@@ -211,6 +214,11 @@ async function renderDashboard() {
           <span class="${deltaClass}">${deltaSign}${fmt(expenseDelta)} vs mês anterior</span>
         </div>
       </div>
+      <div class="card card-investment">
+        <div class="card-label">Investimentos</div>
+        <div class="card-value">${fmt(summary.total_investment)}</div>
+        <div class="card-sub">alocado no mês</div>
+      </div>
       <div class="card card-balance">
         <div class="card-label">Saldo</div>
         <div class="card-value">${fmt(summary.balance)}</div>
@@ -233,6 +241,18 @@ async function renderDashboard() {
         <h3>Despesas por Responsável</h3>
         <div id="resp-breakdown" class="resp-list"></div>
       </div>
+    </div>
+
+    <div class="chart-card evo-card">
+      <div class="evo-header">
+        <h3>Evolução Mensal</h3>
+        <div class="evo-months-btns">
+          <button onclick="setEvoMonths(3)">3 meses</button>
+          <button onclick="setEvoMonths(6)">6 meses</button>
+          <button onclick="setEvoMonths(12)">12 meses</button>
+        </div>
+      </div>
+      <div class="chart-container" style="min-height:220px"><canvas id="evo-chart"></canvas></div>
     </div>
 
     <div class="table-card">
@@ -261,8 +281,8 @@ async function renderDashboard() {
                 </td>
                 <td><span class="badge badge-cat">${esc(t.category)}</span></td>
                 <td>${esc(t.responsible || '—')}</td>
-                <td class="text-right ${t.amount_invalid ? 'amount-unknown' : t.type === 'income' ? 'amount-income' : 'amount-expense'}">
-                  ${t.amount_invalid ? '—' : (t.type === 'income' ? '+' : '-') + fmt(t.amount)}
+                <td class="text-right ${t.amount_invalid ? 'amount-unknown' : t.type === 'income' ? 'amount-income' : t.type === 'investment' ? 'amount-investment' : 'amount-expense'}">
+                  ${t.amount_invalid ? '—' : t.type === 'income' ? '+' + fmt(t.amount) : t.type === 'investment' ? '▲' + fmt(t.amount) : '-' + fmt(t.amount)}
                 </td>
               </tr>`).join('') || '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px">Nenhuma transação neste mês</td></tr>'}
           </tbody>
@@ -325,6 +345,9 @@ async function renderDashboard() {
     respEl.innerHTML = '<div class="empty-state" style="min-height:120px">Sem dados</div>';
   }
 
+  // Gráfico de evolução
+  await renderEvolution();
+
   // Event listeners do seletor de período
   document.getElementById('dash-month').addEventListener('change', (e) => {
     state.dash.month = +e.target.value;
@@ -336,18 +359,90 @@ async function renderDashboard() {
   });
 }
 
+async function renderEvolution() {
+  const n = state.dash.evo_months;
+  // Atualiza botões ativos
+  document.querySelectorAll('.evo-months-btns button').forEach((b) => {
+    const months = parseInt(b.textContent);
+    b.classList.toggle('active', months === n);
+  });
+  const data = await api.get(`/api/evolution?months=${n}`);
+  const ctx = document.getElementById('evo-chart');
+  if (!ctx) return;
+  if (state.charts.evo) state.charts.evo.destroy();
+  state.charts.evo = new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: data.map((d) => d.label),
+      datasets: [
+        { label: 'Receitas',      data: data.map((d) => d.income),     backgroundColor: '#22C55E', borderRadius: 4 },
+        { label: 'Despesas',      data: data.map((d) => d.expense),    backgroundColor: '#EF4444', borderRadius: 4 },
+        { label: 'Investimentos', data: data.map((d) => d.investment), backgroundColor: '#8B5CF6', borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 14, padding: 16 } },
+        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmt(c.raw)}` } },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          grid: { color: '#F1F5F9' },
+          ticks: { callback: (v) => 'R$ ' + new Intl.NumberFormat('pt-BR').format(v) },
+        },
+      },
+    },
+  });
+}
+
+async function setEvoMonths(n) {
+  state.dash.evo_months = n;
+  await renderEvolution();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TRANSAÇÕES
 // ═══════════════════════════════════════════════════════════════════════════
 
+function computePeriodRange(period, year) {
+  const map = {
+    q1:   [`${year}-01-01`, `${year}-03-31`],
+    q2:   [`${year}-04-01`, `${year}-06-30`],
+    q3:   [`${year}-07-01`, `${year}-09-30`],
+    q4:   [`${year}-10-01`, `${year}-12-31`],
+    s1:   [`${year}-01-01`, `${year}-06-30`],
+    s2:   [`${year}-07-01`, `${year}-12-31`],
+    year: [`${year}-01-01`, `${year}-12-31`],
+  };
+  return map[period] || [null, null];
+}
+
+function setSort(col) {
+  if (state.tx.sort_by === col) {
+    state.tx.sort_order = state.tx.sort_order === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.tx.sort_by = col;
+    state.tx.sort_order = 'desc';
+  }
+  state.tx.page = 1;
+  renderTransactions();
+}
+
 async function renderTransactions() {
   const s = state.tx;
+  const dateParams = s.period
+    ? (() => { const [df, dt] = computePeriodRange(s.period, s.year); return { date_from: df, date_to: dt }; })()
+    : { month: s.month, year: s.year };
+
   const q = buildQuery({
-    month: s.month, year: s.year,
+    ...dateParams,
     type: s.type, category: s.category,
     responsible: s.responsible, payment_method: s.payment_method,
     search: s.search,
     invalid_only: s.invalid_only || undefined,
+    sort_by: s.sort_by, sort_order: s.sort_order,
     page: s.page, per_page: s.perPage,
   });
 
@@ -365,7 +460,7 @@ async function renderTransactions() {
     <div class="view-header">
       <h1>Transações</h1>
       <div class="header-actions">
-        <a href="/api/export${buildQuery({ month: s.month, year: s.year })}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
+        <a href="/api/export${s.period ? buildQuery((() => { const [df,dt] = computePeriodRange(s.period, s.year); return {date_from: df, date_to: dt}; })()) : buildQuery({ month: s.month, year: s.year })}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
         <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
       </div>
     </div>
@@ -374,6 +469,19 @@ async function renderTransactions() {
 
     <div class="filters-bar">
       <div class="filter-group">
+        <label>Período</label>
+        <select id="f-period" onchange="togglePeriodFields()">
+          <option value=""   ${s.period === ''    ? 'selected' : ''}>Mês</option>
+          <option value="q1" ${s.period === 'q1'  ? 'selected' : ''}>Q1 (Jan-Mar)</option>
+          <option value="q2" ${s.period === 'q2'  ? 'selected' : ''}>Q2 (Abr-Jun)</option>
+          <option value="q3" ${s.period === 'q3'  ? 'selected' : ''}>Q3 (Jul-Set)</option>
+          <option value="q4" ${s.period === 'q4'  ? 'selected' : ''}>Q4 (Out-Dez)</option>
+          <option value="s1" ${s.period === 's1'  ? 'selected' : ''}>S1 (Jan-Jun)</option>
+          <option value="s2" ${s.period === 's2'  ? 'selected' : ''}>S2 (Jul-Dez)</option>
+          <option value="year" ${s.period === 'year' ? 'selected' : ''}>Ano todo</option>
+        </select>
+      </div>
+      <div class="filter-group" id="f-month-wrap" ${s.period ? 'style="display:none"' : ''}>
         <label>Mês</label>
         <select id="f-month">${monthOptions(s.month)}</select>
       </div>
@@ -385,8 +493,9 @@ async function renderTransactions() {
         <label>Tipo</label>
         <select id="f-type">
           <option value="">Todos</option>
-          <option value="expense" ${s.type === 'expense' ? 'selected' : ''}>Despesa</option>
-          <option value="income"  ${s.type === 'income'  ? 'selected' : ''}>Receita</option>
+          <option value="expense"    ${s.type === 'expense'    ? 'selected' : ''}>Despesa</option>
+          <option value="income"     ${s.type === 'income'     ? 'selected' : ''}>Receita</option>
+          <option value="investment" ${s.type === 'investment' ? 'selected' : ''}>Investimento</option>
         </select>
       </div>
       <div class="filter-group">
@@ -418,12 +527,12 @@ async function renderTransactions() {
         <table>
           <thead>
             <tr>
-              <th>Data</th>
+              <th class="th-sort ${s.sort_by === 'date' ? s.sort_order : ''}" onclick="setSort('date')">Data</th>
               <th>Descrição</th>
               <th>Categoria</th>
               <th>Método</th>
               <th>Responsável</th>
-              <th class="text-right">Valor</th>
+              <th class="text-right th-sort ${s.sort_by === 'amount' ? s.sort_order : ''}" onclick="setSort('amount')">Valor</th>
               <th></th>
             </tr>
           </thead>
@@ -443,8 +552,8 @@ async function renderTransactions() {
                   <td><span class="badge badge-cat">${esc(t.category)}</span></td>
                   <td class="text-muted" style="font-size:12px">${esc(t.payment_method || '—')}</td>
                   <td class="text-muted" style="font-size:12px">${esc(t.responsible || '—')}</td>
-                  <td class="text-right ${t.amount_invalid ? 'amount-unknown' : t.type === 'income' ? 'amount-income' : 'amount-expense'}">
-                    ${t.amount_invalid ? '<span title="Valor pendente de correção">—</span>' : (t.type === 'income' ? '+' : '-') + fmt(t.amount)}
+                  <td class="text-right ${t.amount_invalid ? 'amount-unknown' : t.type === 'income' ? 'amount-income' : t.type === 'investment' ? 'amount-investment' : 'amount-expense'}">
+                    ${t.amount_invalid ? '<span title="Valor pendente de correção">—</span>' : t.type === 'income' ? '+' + fmt(t.amount) : t.type === 'investment' ? '▲' + fmt(t.amount) : '-' + fmt(t.amount)}
                   </td>
                   <td>
                     <div class="row-actions">
@@ -488,9 +597,18 @@ function buildPageButtons(current, total) {
   return pages.join('');
 }
 
+function togglePeriodFields() {
+  const period = document.getElementById('f-period').value;
+  const wrap = document.getElementById('f-month-wrap');
+  if (wrap) wrap.style.display = period ? 'none' : '';
+}
+
 function applyFilters() {
-  state.tx.month = +document.getElementById('f-month').value;
+  state.tx.period = document.getElementById('f-period').value;
   state.tx.year = +document.getElementById('f-year').value;
+  if (!state.tx.period) {
+    state.tx.month = +document.getElementById('f-month').value;
+  }
   state.tx.type = document.getElementById('f-type').value;
   state.tx.category = document.getElementById('f-cat').value;
   state.tx.responsible = document.getElementById('f-resp').value;
@@ -500,7 +618,7 @@ function applyFilters() {
 }
 
 function clearFilters() {
-  state.tx = { ...state.tx, type: '', category: '', responsible: '', payment_method: '', search: '', invalid_only: false, page: 1 };
+  state.tx = { ...state.tx, period: '', type: '', category: '', responsible: '', payment_method: '', search: '', invalid_only: false, sort_by: 'date', sort_order: 'desc', page: 1 };
   renderTransactions();
 }
 

@@ -10,6 +10,8 @@
   --blue-bg: #DBEAFE;
   --yellow:  #F59E0B;
   --yellow-bg: #FEF3C7;
+  --purple:  #8B5CF6;
+  --purple-bg: #EDE9FE;
 
   --sidebar-w: 240px;
   --sidebar-bg: #1E293B;
@@ -123,15 +125,17 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .card-accent { width: 4px; border-radius: 4px; height: 42px; position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
 .card { position: relative; overflow: hidden; }
 .card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
-.card-income::before  { background: var(--green); }
-.card-expense::before { background: var(--red); }
-.card-balance::before { background: var(--blue); }
-.card-warning::before { background: var(--yellow); }
+.card-income::before      { background: var(--green); }
+.card-expense::before     { background: var(--red); }
+.card-investment::before  { background: var(--purple); }
+.card-balance::before     { background: var(--blue); }
+.card-warning::before     { background: var(--yellow); }
 
-.card-income  .card-value { color: var(--green); }
-.card-expense .card-value { color: var(--red); }
-.card-balance .card-value { color: var(--blue); }
-.card-warning .card-value { color: var(--yellow); }
+.card-income      .card-value { color: var(--green); }
+.card-expense     .card-value { color: var(--red); }
+.card-investment  .card-value { color: var(--purple); }
+.card-balance     .card-value { color: var(--blue); }
+.card-warning     .card-value { color: var(--yellow); }
 
 .card-warning { cursor: pointer; transition: var(--transition); }
 .card-warning:hover { border-color: var(--yellow); }
@@ -198,9 +202,29 @@ td { padding: 10px 14px; vertical-align: middle; font-size: 13px; }
 .badge-cat { background: var(--blue-bg); color: #1D4ED8; font-weight: 500; }
 
 /* ── Amounts ──────────────────────────────────────────────────────────── */
-.amount-expense { color: var(--red); font-weight: 600; font-variant-numeric: tabular-nums; }
-.amount-income  { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
-.amount-unknown { color: var(--text-muted); font-style: italic; }
+.amount-expense    { color: var(--red);    font-weight: 600; font-variant-numeric: tabular-nums; }
+.amount-income     { color: var(--green);  font-weight: 600; font-variant-numeric: tabular-nums; }
+.amount-investment { color: var(--purple); font-weight: 600; font-variant-numeric: tabular-nums; }
+.amount-unknown    { color: var(--text-muted); font-style: italic; }
+
+/* ── Investimento badge ──────────────────────────────────────────────────── */
+.badge-investment { background: var(--purple-bg); color: #7C3AED; }
+
+/* ── Sortable table headers ──────────────────────────────────────────────── */
+.th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.th-sort:hover { color: var(--blue); }
+.th-sort::after { content: ' ⇅'; opacity: 0.3; font-size: 10px; }
+.th-sort.asc::after  { content: ' ▲'; opacity: 1; color: var(--blue); }
+.th-sort.desc::after { content: ' ▼'; opacity: 1; color: var(--blue); }
+
+/* ── Evolution chart card ────────────────────────────────────────────────── */
+.evo-card { margin-bottom: 24px; }
+.evo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.evo-header h3 { font-size: 14px; font-weight: 600; color: var(--text); }
+.evo-months-btns { display: flex; gap: 4px; }
+.evo-months-btns button { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-size: 12px; color: var(--text-muted); transition: var(--transition); }
+.evo-months-btns button:hover { border-color: var(--blue); color: var(--blue); }
+.evo-months-btns button.active { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
 
 /* ── Actions ──────────────────────────────────────────────────────────── */
 .row-actions { display: flex; gap: 6px; align-items: center; }
