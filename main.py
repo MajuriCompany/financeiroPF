@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
@@ -115,8 +115,8 @@ class CategoryResponse(BaseModel):
 
 def _month_filter(query, month: int, year: int):
     return query.filter(
-        func.strftime("%m", Transaction.date) == f"{month:02d}",
-        func.strftime("%Y", Transaction.date) == str(year),
+        extract("month", Transaction.date) == month,
+        extract("year", Transaction.date) == year,
     )
 
 
@@ -172,7 +172,7 @@ async def list_transactions(
     elif month and year:
         q = _month_filter(q, month, year)
     elif year:
-        q = q.filter(func.strftime("%Y", Transaction.date) == str(year))
+        q = q.filter(extract("year", Transaction.date) == year)
 
     if type:
         q = q.filter(Transaction.type == type)
@@ -478,7 +478,7 @@ async def export_csv(
     elif month and year:
         q = _month_filter(q, month, year)
     elif year:
-        q = q.filter(func.strftime("%Y", Transaction.date) == str(year))
+        q = q.filter(extract("year", Transaction.date) == year)
 
     txs = q.order_by(Transaction.date.desc()).all()
 
