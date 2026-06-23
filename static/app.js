@@ -1,5 +1,8 @@
 'use strict';
 
+// Cache de transações para evitar JSON inline em onclick
+const _txCache = {};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ESTADO GLOBAL
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74,8 +77,15 @@ const api = {
     if (body !== undefined) opts.body = JSON.stringify(body);
     const res = await fetch(url, opts);
     if (res.status === 204) return null;
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+    let data;
+    try { data = await res.json(); } catch { throw new Error(`Erro HTTP ${res.status}`); }
+    if (!res.ok) {
+      const d = data.detail;
+      const msg = Array.isArray(d)
+        ? d.map((e) => `${(e.loc || []).slice(-1)[0] ?? ''}: ${e.msg}`).join(' | ')
+        : (typeof d === 'string' ? d : JSON.stringify(d));
+      throw new Error(msg || `Erro ${res.status}`);
+    }
     return data;
   },
   get: (url) => api.req('GET', url),
@@ -420,7 +430,9 @@ async function renderTransactions() {
           <tbody>
             ${data.items.length === 0
               ? '<tr><td colspan="7" style="text-align:center;padding:32px;color:#64748B">Nenhuma transação encontrada</td></tr>'
-              : data.items.map((t) => `
+              : data.items.map((t) => {
+                  _txCache[t.id] = t;
+                  return `
                 <tr class="${t.amount_invalid ? 'row-invalid' : ''}">
                   <td class="font-mono" style="white-space:nowrap">${fmtDate(t.date)}</td>
                   <td class="td-desc">
@@ -436,11 +448,12 @@ async function renderTransactions() {
                   </td>
                   <td>
                     <div class="row-actions">
-                      <button class="btn-icon" title="Editar" onclick='editTransaction(${JSON.stringify(t)})'>✏</button>
-                      <button class="btn-icon danger" title="Excluir" onclick="deleteTransaction('${t.id}', '${esc(t.description)}')">🗑</button>
+                      <button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏</button>
+                      <button class="btn-icon danger" title="Excluir" onclick="deleteTransaction('${t.id}', '${esc(t.description).replace(/'/g, "\\'")}')">🗑</button>
                     </div>
                   </td>
-                </tr>`).join('')}
+                </tr>`;
+                }).join('')}
           </tbody>
         </table>
       </div>
@@ -521,23 +534,26 @@ async function openTransactionModal(tx = null) {
   state.editingTxId = tx ? tx.id : null;
   title.textContent = tx ? 'Editar Transação' : 'Nova Transação';
 
-  // Popula categorias
-  catSelect.innerHTML = state.categories.map((c) =>
-    `<option value="${esc(c.name)}" ${tx && tx.category === c.name ? 'selected' : ''}>${esc(c.name)}</option>`
-  ).join('');
-
+  // Reset PRIMEIRO, depois popula
   form.reset();
 
+  // Popula categorias
+  const currentCat = tx ? tx.category : '';
+  catSelect.innerHTML = state.categories.map((c) =>
+    `<option value="${esc(c.name)}" ${c.name === currentCat ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
   if (tx) {
-    form.description.value = tx.description;
-    form.type.value = tx.type;
-    if (tx.amount != null) form.amount.value = tx.amount;
+    form.description.value = tx.description || '';
+    form.type.value = tx.type || 'expense';
+    // Exibe o valor atual mesmo que inválido (para o usuário confirmar/corrigir)
+    form.amount.value = tx.amount != null ? tx.amount : '';
     form.date.value = tx.date ? tx.date.split('T')[0] : '';
     form.responsible.value = tx.responsible || '';
     form.payment_method.value = tx.payment_method || '';
     form.notes.value = tx.notes || '';
-    catSelect.value = tx.category;
-    document.getElementById('amount-invalid-cb').checked = tx.amount_invalid;
+    catSelect.value = tx.category || '';
+    document.getElementById('amount-invalid-cb').checked = !!tx.amount_invalid;
     invalidRow.style.display = 'block';
   } else {
     form.date.value = new Date().toISOString().split('T')[0];
@@ -552,7 +568,9 @@ function closeTransactionModal() {
   state.editingTxId = null;
 }
 
-function editTransaction(tx) {
+function editTransaction(id) {
+  const tx = _txCache[id];
+  if (!tx) { showToast('Transação não encontrada no cache', 'error'); return; }
   openTransactionModal(tx);
 }
 
@@ -574,7 +592,7 @@ async function submitTransaction(e) {
     payment_method: form.payment_method.value || null,
     responsible: form.responsible.value || null,
     notes: form.notes.value.trim() || null,
-    date: form.date.value,
+    date: form.date.value || null,
     amount_invalid: amountVal == null ? true : isInvalidCb,
   };
 
