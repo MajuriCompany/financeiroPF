@@ -18,8 +18,10 @@ if _pg:
     SQLALCHEMY_DATABASE_URL = _pg
     engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
 else:
-    # Desenvolvimento local — SQLite
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./financas.db"
+    # Sem variável de banco cloud — usa SQLite
+    # /tmp é o único diretório gravável no Vercel; localmente usa arquivo local
+    _sqlite_path = "/tmp/financas.db" if os.path.exists("/tmp") else "./financas.db"
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{_sqlite_path}"
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False},
