@@ -1,7 +1,12 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./financas.db"
+# No Vercel o disco é efêmero — usa /tmp; localmente usa ./financas.db
+if os.environ.get("VERCEL"):
+    SQLALCHEMY_DATABASE_URL = "sqlite:////tmp/financas.db"
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./financas.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,

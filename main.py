@@ -2,6 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -16,8 +17,10 @@ from models import Category, Transaction
 
 Base.metadata.create_all(bind=engine)
 
+BASE_DIR = Path(__file__).resolve().parent
+
 app = FastAPI(title="Finanças Pessoais")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -103,7 +106,7 @@ def _tx_dict(t: Transaction) -> dict:
 
 @app.get("/")
 async def root():
-    return FileResponse("static/index.html")
+    return FileResponse(str(BASE_DIR / "static" / "index.html"))
 
 
 # ── Transactions ──────────────────────────────────────────────────────────────
