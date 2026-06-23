@@ -2,14 +2,14 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Tenta todas as variáveis que Supabase/Neon/Vercel Postgres podem criar.
-# Preferência para URLs diretas (sem PgBouncer) para evitar conflito com SQLAlchemy.
+# Prefere conexão direta (sem PgBouncer) para compatibilidade com SQLAlchemy.
+# Neon cria DATABASE_URL (pooled) e DATABASE_URL_UNPOOLED (direto).
 _pg = (
-    os.environ.get("POSTGRES_URL_NON_POOLING")  # Neon / Supabase direto (sem pooler)
-    or os.environ.get("DATABASE_URL")           # Prefixo DATABASE (recomendado)
-    or os.environ.get("STORAGE_URL")            # Prefixo padrão Supabase Vercel
-    or os.environ.get("POSTGRES_PRISMA_URL")    # Neon Prisma
-    or os.environ.get("POSTGRES_URL")           # Neon pooled
+    os.environ.get("DATABASE_URL_UNPOOLED")       # Neon direto — preferido
+    or os.environ.get("POSTGRES_URL_NON_POOLING") # Neon / Supabase alternativo
+    or os.environ.get("DATABASE_URL")             # Pooled (fallback)
+    or os.environ.get("STORAGE_URL")              # Prefixo custom Vercel
+    or os.environ.get("POSTGRES_URL")             # Outros provedores
 )
 
 if _pg:
