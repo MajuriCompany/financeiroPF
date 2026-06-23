@@ -1,7 +1,7 @@
 import csv
 import io
 import uuid
-from datetime import date, datetime
+from datetime import date as DateT, datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -69,7 +69,7 @@ class TransactionCreate(BaseModel):
     payment_method: Optional[str] = None
     responsible: Optional[str] = None
     notes: Optional[str] = None
-    date: date
+    date: DateT
     amount_invalid: bool = False
 
 
@@ -81,7 +81,7 @@ class TransactionUpdate(BaseModel):
     payment_method: Optional[str] = None
     responsible: Optional[str] = None
     notes: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[DateT] = None
     amount_invalid: Optional[bool] = None
 
 
@@ -95,7 +95,7 @@ class TransactionResponse(BaseModel):
     payment_method: Optional[str]
     responsible: Optional[str]
     notes: Optional[str]
-    date: Optional[date]
+    date: Optional[DateT]
     created_at: Optional[datetime]
     amount_invalid: bool
 
@@ -151,8 +151,8 @@ async def root():
 async def list_transactions(
     month: Optional[int] = None,
     year: Optional[int] = None,
-    date_from: Optional[date] = None,
-    date_to: Optional[date] = None,
+    date_from: Optional[DateT] = None,
+    date_to: Optional[DateT] = None,
     type: Optional[str] = None,
     category: Optional[str] = None,
     responsible: Optional[str] = None,
@@ -468,8 +468,8 @@ async def get_report(month: int, year: int, db: Session = Depends(get_db)):
 async def export_csv(
     month: Optional[int] = None,
     year: Optional[int] = None,
-    date_from: Optional[date] = None,
-    date_to: Optional[date] = None,
+    date_from: Optional[DateT] = None,
+    date_to: Optional[DateT] = None,
     db: Session = Depends(get_db),
 ):
     q = db.query(Transaction)
