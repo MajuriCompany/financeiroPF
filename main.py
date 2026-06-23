@@ -12,12 +12,47 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import Base, engine, get_db
+from database import Base, engine, get_db, SessionLocal
 from models import Category, Transaction
 
 Base.metadata.create_all(bind=engine)
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _seed_if_empty():
+    """Popula o banco com seed_data.json se estiver vazio (ex: Vercel cold start)."""
+    seed_file = BASE_DIR / "seed_data.json"
+    if not seed_file.exists():
+        return
+    db = SessionLocal()
+    try:
+        if db.query(Transaction).count() > 0:
+            return
+        import json
+        data = json.loads(seed_file.read_text(encoding="utf-8"))
+        for c in data.get("categories", []):
+            if not db.query(Category).filter(Category.id == c["id"]).first():
+                db.add(Category(id=c["id"], name=c["name"]))
+        for t in data.get("transactions", []):
+            if db.query(Transaction).filter(Transaction.id == t["id"]).first():
+                continue
+            from datetime import date as date_type, datetime as dt_type
+            tx_date = date_type.fromisoformat(t["date"]) if t.get("date") else None
+            tx_created = dt_type.fromisoformat(t["created_at"]) if t.get("created_at") else None
+            db.add(Transaction(
+                id=t["id"], description=t["description"], amount=t["amount"],
+                type=t["type"], category=t["category"],
+                payment_method=t.get("payment_method"), responsible=t.get("responsible"),
+                notes=t.get("notes"), date=tx_date, created_at=tx_created,
+                amount_invalid=t.get("amount_invalid", False),
+            ))
+        db.commit()
+    finally:
+        db.close()
+
+
+_seed_if_empty()
 
 app = FastAPI(title="Finanças Pessoais")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
