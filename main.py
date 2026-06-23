@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 import uuid
 from datetime import date as DateT, datetime
 from pathlib import Path
@@ -56,6 +57,22 @@ _seed_if_empty()
 
 app = FastAPI(title="Finanças Pessoais")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.get("/api/health")
+def health():
+    from database import SQLALCHEMY_DATABASE_URL
+    db_type = SQLALCHEMY_DATABASE_URL.split("://")[0]
+    return {
+        "db": db_type,
+        "url_prefix": SQLALCHEMY_DATABASE_URL[:30] + "...",
+        "env": {
+            "DATABASE_URL_UNPOOLED": bool(os.environ.get("DATABASE_URL_UNPOOLED")),
+            "STORAGE_URL_UNPOOLED": bool(os.environ.get("STORAGE_URL_UNPOOLED")),
+            "DATABASE_URL": bool(os.environ.get("DATABASE_URL")),
+            "STORAGE_URL": bool(os.environ.get("STORAGE_URL")),
+        }
+    }
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
