@@ -203,32 +203,35 @@ async function renderDashboard() {
 
     <div class="cards-row">
       <div class="card card-income">
+        <div class="card-icon">📈</div>
         <div class="card-label">Receitas</div>
         <div class="card-value">${fmt(summary.total_income)}</div>
-        <div class="card-sub">${summary.transaction_count} transações</div>
+        <div class="card-sub">${summary.transaction_count} transações no mês</div>
       </div>
       <div class="card card-expense">
+        <div class="card-icon">💸</div>
         <div class="card-label">Despesas</div>
         <div class="card-value">${fmt(summary.total_expense)}</div>
-        <div class="card-sub">
-          <span class="${deltaClass}">${deltaSign}${fmt(expenseDelta)} vs mês anterior</span>
-        </div>
+        <div class="card-sub"><span class="${deltaClass}">${deltaSign}${fmt(expenseDelta)} vs mês anterior</span></div>
       </div>
       <div class="card card-investment">
+        <div class="card-icon">💎</div>
         <div class="card-label">Investimentos</div>
         <div class="card-value">${fmt(summary.total_investment)}</div>
         <div class="card-sub">alocado no mês</div>
       </div>
       <div class="card card-balance">
+        <div class="card-icon">⚖️</div>
         <div class="card-label">Saldo</div>
         <div class="card-value">${fmt(summary.balance)}</div>
-        <div class="card-sub">${summary.balance >= 0 ? '✓ Positivo' : '⚠ Negativo'}</div>
+        <div class="card-sub">${summary.balance >= 0 ? '✓ No azul' : '⚠ No vermelho'}</div>
       </div>
       ${summary.invalid_count > 0 ? `
       <div class="card card-warning" onclick="filterInvalid()">
+        <div class="card-icon">⚠️</div>
         <div class="card-label">Correções Pendentes</div>
         <div class="card-value">${summary.invalid_count}</div>
-        <div class="card-sub">transações sem valor</div>
+        <div class="card-sub">transações sem valor — clique para ver</div>
       </div>` : ''}
     </div>
 
