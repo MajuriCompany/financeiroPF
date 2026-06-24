@@ -10,6 +10,53 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- Tela de login -->
+  <div id="login-screen" class="login-screen hidden">
+    <div class="login-card">
+      <div class="login-logo">💰</div>
+      <h1 class="login-title">Finanças PF</h1>
+      <p class="login-sub">Controle pessoal de finanças</p>
+
+      <!-- Login -->
+      <div id="login-panel">
+        <form id="login-form" onsubmit="submitLogin(event)">
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Usuário</label>
+            <input type="text" id="login-username" placeholder="seu usuário" autocomplete="username" required />
+          </div>
+          <div class="form-group" style="margin-bottom:20px">
+            <label>Senha</label>
+            <input type="password" id="login-password" placeholder="••••••" autocomplete="current-password" required />
+          </div>
+          <div id="login-error" class="login-error hidden"></div>
+          <button type="submit" id="login-btn" class="btn btn-primary" style="width:100%;padding:11px">Entrar</button>
+        </form>
+        <p class="login-toggle">Não tem conta? <a href="#" onclick="showRegister(event)">Registrar</a></p>
+      </div>
+
+      <!-- Register -->
+      <div id="register-panel" class="hidden">
+        <form id="register-form" onsubmit="submitRegister(event)">
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Usuário</label>
+            <input type="text" id="reg-username" placeholder="escolha um usuário" autocomplete="username" required />
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Senha</label>
+            <input type="password" id="reg-password" placeholder="••••••" autocomplete="new-password" required />
+          </div>
+          <div class="form-group" style="margin-bottom:20px">
+            <label>Confirmar senha</label>
+            <input type="password" id="reg-password2" placeholder="••••••" autocomplete="new-password" required />
+          </div>
+          <div id="reg-error" class="login-error hidden"></div>
+          <button type="submit" id="reg-btn" class="btn btn-primary" style="width:100%;padding:11px">Criar conta</button>
+        </form>
+        <p class="login-toggle">Já tem conta? <a href="#" onclick="showLoginPanel(event)">Entrar</a></p>
+      </div>
+    </div>
+  </div>
+
   <div id="app">
     <!-- Banner de dados inválidos -->
     <div id="invalid-banner" class="invalid-banner hidden">
@@ -54,8 +101,9 @@
             + Nova Transação
           </button>
           <div class="sidebar-user">
-            <div class="user-avatar">NR</div>
-            <span class="user-name">Nicolas &amp; Camila</span>
+            <div class="user-avatar" id="sidebar-avatar">?</div>
+            <span class="user-name" id="sidebar-username">—</span>
+            <button class="logout-btn" onclick="logout()" title="Sair">⏻</button>
           </div>
         </div>
       </aside>

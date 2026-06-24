@@ -597,6 +597,51 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
   margin-bottom: 16px;
 }
 
+/* ── Login Screen ─────────────────────────────────────────────────────── */
+.login-screen {
+  position: fixed; inset: 0;
+  background: linear-gradient(135deg, #0A0E1A 0%, #1E2340 100%);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.login-card {
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.35);
+  padding: 40px 40px 36px;
+  width: 100%; max-width: 380px;
+  text-align: center;
+}
+.login-logo { font-size: 44px; margin-bottom: 12px; line-height: 1; }
+.login-title { font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+.login-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 28px; }
+.login-card .form-group { text-align: left; margin-bottom: 0; }
+.login-card .form-group label { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; display: block; }
+.login-card input {
+  width: 100%; padding: 10px 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-xs);
+  font-size: 14px; color: var(--text); background: var(--surface);
+  transition: border-color .15s;
+}
+.login-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+.login-error {
+  background: #FFF1F2; color: var(--red); border: 1px solid #FECDD3;
+  border-radius: var(--radius-xs); padding: 9px 13px;
+  font-size: 12.5px; font-weight: 500; margin-bottom: 14px; text-align: left;
+}
+.login-toggle { margin-top: 18px; font-size: 13px; color: var(--text-muted); }
+.login-toggle a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.login-toggle a:hover { text-decoration: underline; }
+
+/* ── Logout button in sidebar ─────────────────────────────────────────── */
+.logout-btn {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,.35); font-size: 16px;
+  padding: 2px 4px; border-radius: 6px;
+  transition: color .15s, background .15s;
+}
+.logout-btn:hover { color: #fff; background: rgba(255,255,255,.1); }
+
 /* ── Report Multi-Month Pills ─────────────────────────────────────────── */
 .month-pills { display: flex; flex-wrap: wrap; gap: 5px; }
 .month-pill {

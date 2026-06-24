@@ -2,19 +2,21 @@ import csv
 import io
 import os
 import uuid
-from datetime import date as DateT, datetime
+from datetime import date as DateT, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+import bcrypt as _bcrypt
+from jose import JWTError, jwt
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
-from models import Category, Transaction
+from models import Category, Transaction, User
 
 Base.metadata.create_all(bind=engine)
 
@@ -55,8 +57,110 @@ def _seed_if_empty():
 
 _seed_if_empty()
 
+# ── Auth config ───────────────────────────────────────────────────────────────
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-financas-pf-change-in-prod")
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_DAYS = 60
+
+
+def _hash_pw(pw: str) -> str:
+    return _bcrypt.hashpw(pw.encode(), _bcrypt.gensalt()).decode()
+
+
+def _verify_pw(plain: str, hashed: str) -> bool:
+    return _bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+def _create_token(username: str) -> str:
+    expire = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
+    return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _decode_token(token: str) -> str:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    username = payload.get("sub")
+    if not username:
+        raise JWTError("no sub")
+    return username
+
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
 app = FastAPI(title="Finanças Pessoais")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+# Auth middleware — protege todos os /api/* exceto /api/auth/login e /api/auth/register
+_PUBLIC_PATHS = {"/api/auth/login", "/api/auth/register"}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path in _PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Aceita token no header ou como query param (para links de download)
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    if not token:
+        token = request.query_params.get("token", "")
+
+    if not token:
+        return JSONResponse({"detail": "Não autenticado"}, status_code=401)
+    try:
+        _decode_token(token)
+    except JWTError:
+        return JSONResponse({"detail": "Token inválido"}, status_code=401)
+
+    return await call_next(request)
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/register")
+async def auth_register(req: AuthRequest, db: Session = Depends(get_db)):
+    if len(req.username.strip()) < 3:
+        raise HTTPException(400, "Nome de usuário deve ter ao menos 3 caracteres")
+    if len(req.password) < 4:
+        raise HTTPException(400, "Senha deve ter ao menos 4 caracteres")
+    if db.query(User).filter(User.username == req.username.strip()).first():
+        raise HTTPException(400, "Usuário já existe")
+    user = User(
+        id=str(uuid.uuid4()),
+        username=req.username.strip(),
+        password_hash=_hash_pw(req.password),
+        created_at=datetime.utcnow(),
+    )
+    db.add(user)
+    db.commit()
+    return {"token": _create_token(user.username), "username": user.username}
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: AuthRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == req.username.strip()).first()
+    if not user or not _verify_pw(req.password, user.password_hash):
+        raise HTTPException(401, "Usuário ou senha inválidos")
+    return {"token": _create_token(user.username), "username": user.username}
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip()
+    username = _decode_token(token)
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(404, "Usuário não encontrado")
+    return {"username": user.username}
 
 
 @app.get("/api/health")

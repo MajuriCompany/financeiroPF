@@ -75,10 +75,18 @@ function showToast(msg, type = 'success') {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const api = {
+  token: () => localStorage.getItem('auth_token') || '',
   async req(method, url, body) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const opts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${api.token()}`,
+      },
+    };
     if (body !== undefined) opts.body = JSON.stringify(body);
     const res = await fetch(url, opts);
+    if (res.status === 401) { logout(); return null; }
     if (res.status === 204) return null;
     let data;
     try { data = await res.json(); } catch { throw new Error(`Erro HTTP ${res.status}`); }
@@ -96,6 +104,105 @@ const api = {
   put: (url, body) => api.req('PUT', url, body),
   del: (url) => api.req('DELETE', url),
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showLogin() {
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+}
+
+function showApp() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  const username = localStorage.getItem('auth_username') || '';
+  const el = document.getElementById('sidebar-username');
+  const av = document.getElementById('sidebar-avatar');
+  if (el) el.textContent = username;
+  if (av) av.textContent = (username[0] || '?').toUpperCase();
+}
+
+function showRegister(e) {
+  e?.preventDefault();
+  document.getElementById('login-panel').classList.add('hidden');
+  document.getElementById('register-panel').classList.remove('hidden');
+}
+
+function showLoginPanel(e) {
+  e?.preventDefault();
+  document.getElementById('register-panel').classList.add('hidden');
+  document.getElementById('login-panel').classList.remove('hidden');
+}
+
+function logout() {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('auth_username');
+  showLogin();
+}
+
+async function submitLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  errEl.classList.add('hidden');
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Credenciais inválidas');
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('auth_username', data.username);
+    showApp();
+    navigate('dashboard');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Entrar';
+  }
+}
+
+async function submitRegister(e) {
+  e.preventDefault();
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const password2 = document.getElementById('reg-password2').value;
+  const btn = document.getElementById('reg-btn');
+  const errEl = document.getElementById('reg-error');
+  errEl.classList.add('hidden');
+  if (password !== password2) {
+    errEl.textContent = 'As senhas não coincidem';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Criando...';
+  try {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Erro ao criar conta');
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('auth_username', data.username);
+    showApp();
+    navigate('dashboard');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Criar conta';
+  }
+}
 
 function buildQuery(params) {
   const q = new URLSearchParams();
@@ -463,7 +570,7 @@ async function renderTransactions() {
     <div class="view-header">
       <h1>Transações</h1>
       <div class="header-actions">
-        <a href="/api/export${s.period ? buildQuery((() => { const [df,dt] = computePeriodRange(s.period, s.year); return {date_from: df, date_to: dt}; })()) : buildQuery({ month: s.month, year: s.year })}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
+        <a href="/api/export${s.period ? buildQuery((() => { const [df,dt] = computePeriodRange(s.period, s.year); return {date_from: df, date_to: dt, token: api.token()}; })()) : buildQuery({ month: s.month, year: s.year, token: api.token() })}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
         <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
       </div>
     </div>
@@ -1210,7 +1317,19 @@ document.addEventListener('keydown', (e) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function init() {
-  // Verificar contagem de inválidos para mostrar banner imediatamente
+  const token = localStorage.getItem('auth_token');
+  if (!token) { showLogin(); return; }
+
+  // Valida token
+  try {
+    const r = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) { logout(); return; }
+    const user = await r.json();
+    localStorage.setItem('auth_username', user.username);
+  } catch (_) { logout(); return; }
+
+  showApp();
+
   try {
     const summary = await api.get(`/api/summary?month=${state.dash.month}&year=${state.dash.year}`);
     updateInvalidBanner(summary.invalid_count);
