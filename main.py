@@ -527,9 +527,16 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
                 "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
                 "transactions": [
                     {
+                        "id": t.id,
                         "description": t.description,
                         "amount": round(t.amount, 2),
                         "date": t.date.isoformat() if t.date else None,
+                        "type": t.type,
+                        "category": t.category,
+                        "responsible": t.responsible,
+                        "payment_method": t.payment_method,
+                        "notes": t.notes,
+                        "amount_invalid": t.amount_invalid,
                     }
                     for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
                 ],

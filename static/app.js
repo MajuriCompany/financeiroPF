@@ -26,7 +26,7 @@ const state = {
     page: 1,
     perPage: 20,
   },
-  report: { months: [now.getMonth() + 1], year: now.getFullYear(), sortBy: 'total', sortDir: 'desc', openCats: new Set(), sortedCats: [], data: null },
+  report: { months: [now.getMonth() + 1], year: now.getFullYear(), sortBy: 'total', sortDir: 'desc', openCats: new Set(), sortedCats: [], innerSort: {}, data: null },
   categories: [],
   invalidCount: 0,
   editingTxId: null,
@@ -726,7 +726,8 @@ async function submitTransaction(e) {
       showToast('Transação criada!');
     }
     closeTransactionModal();
-    if (state.view === 'dashboard') renderDashboard();
+    if (state.view === 'report') renderReport({ preserveState: true });
+    else if (state.view === 'dashboard') renderDashboard();
     else renderTransactions();
   } catch (err) {
     showToast('Erro: ' + err.message, 'error');
@@ -845,11 +846,16 @@ function deleteCategory(id, name, count) {
 // RELATÓRIO
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function renderReport() {
+async function renderReport({ preserveState = false } = {}) {
   const { months, year } = state.report;
   const data = await api.get(`/api/report/multi?months=${months.join(',')}&year=${year}`);
   state.report.data = data;
-  state.report.openCats = new Set();
+  if (!preserveState) {
+    state.report.openCats = new Set();
+    state.report.innerSort = {};
+  }
+  // Popula cache de transações para o modal de edição
+  data.categories.forEach((c) => c.transactions.forEach((t) => { _txCache[t.id] = t; }));
 
   const main = document.getElementById('main-content');
 
@@ -961,7 +967,7 @@ async function renderReport() {
 }
 
 function renderReportCatRows(data) {
-  const { sortBy, sortDir, openCats } = state.report;
+  const { sortBy, sortDir, openCats, innerSort } = state.report;
 
   const cats = [...data.categories].sort((a, b) => {
     let va = a[sortBy], vb = b[sortBy];
@@ -976,6 +982,12 @@ function renderReportCatRows(data) {
   const si = (col) => {
     if (state.report.sortBy !== col) return '<span class="sort-icon">↕</span>';
     return `<span class="sort-icon active">${state.report.sortDir === 'asc' ? '↑' : '↓'}</span>`;
+  };
+
+  const innerSi = (catName, col) => {
+    const s = innerSort[catName];
+    if (!s || s.col !== col) return '<span class="sort-icon">↕</span>';
+    return `<span class="sort-icon active">${s.dir === 'asc' ? '↑' : '↓'}</span>`;
   };
 
   if (cats.length === 0) {
@@ -993,12 +1005,26 @@ function renderReportCatRows(data) {
     <tbody>
       ${cats.map((c, idx) => {
         const isOpen = openCats.has(c.name);
-        const txRows = c.transactions.map((t) => {
+        const iSort = innerSort[c.name];
+        let txList = [...c.transactions];
+        if (iSort) {
+          txList.sort((a, b) => {
+            const va = a[iSort.col] ?? '';
+            const vb = b[iSort.col] ?? '';
+            if (va < vb) return iSort.dir === 'asc' ? -1 : 1;
+            if (va > vb) return iSort.dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+        }
+        const txRows = txList.map((t) => {
           const dayMonth = t.date ? t.date.slice(8, 10) + '/' + t.date.slice(5, 7) : '—';
           return `<tr>
             <td class="inner-tx-desc">${esc(t.description)}</td>
             <td class="text-right amount-expense">${fmt(t.amount)}</td>
             <td class="text-right text-muted">${dayMonth}</td>
+            <td class="text-right" style="width:36px;padding-right:12px">
+              <button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏</button>
+            </td>
           </tr>`;
         }).join('');
         return `
@@ -1016,8 +1042,9 @@ function renderReportCatRows(data) {
               <thead>
                 <tr>
                   <th class="inner-tx-desc">Descrição</th>
-                  <th class="text-right">Valor</th>
-                  <th class="text-right">Data</th>
+                  <th class="text-right inner-sort-th" data-outer-idx="${idx}" data-inner-col="amount">Valor ${innerSi(c.name, 'amount')}</th>
+                  <th class="text-right inner-sort-th" data-outer-idx="${idx}" data-inner-col="date">Data ${innerSi(c.name, 'date')}</th>
+                  <th style="width:36px"></th>
                 </tr>
               </thead>
               <tbody>${txRows}</tbody>
@@ -1025,7 +1052,7 @@ function renderReportCatRows(data) {
                 <tr>
                   <td class="inner-tx-desc"><strong>Total ${esc(c.name)}</strong></td>
                   <td class="text-right"><strong class="amount-expense">${fmt(c.total)}</strong></td>
-                  <td></td>
+                  <td></td><td></td>
                 </tr>
               </tfoot>
             </table>
@@ -1071,6 +1098,23 @@ function attachCatRowListeners() {
       } else {
         state.report.sortBy = col;
         state.report.sortDir = col === 'name' ? 'asc' : 'desc';
+      }
+      document.getElementById('cat-breakdown-body').innerHTML = renderReportCatRows(state.report.data);
+      attachCatRowListeners();
+    });
+  });
+
+  document.querySelectorAll('.inner-sort-th').forEach((th) => {
+    th.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const outerIdx = +th.dataset.outerIdx;
+      const catName = state.report.sortedCats[outerIdx].name;
+      const col = th.dataset.innerCol;
+      const curr = state.report.innerSort[catName];
+      if (curr && curr.col === col) {
+        state.report.innerSort[catName] = { col, dir: curr.dir === 'desc' ? 'asc' : 'desc' };
+      } else {
+        state.report.innerSort[catName] = { col, dir: 'desc' };
       }
       document.getElementById('cat-breakdown-body').innerHTML = renderReportCatRows(state.report.data);
       attachCatRowListeners();
