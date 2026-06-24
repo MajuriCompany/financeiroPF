@@ -899,7 +899,7 @@ async function renderReport({ preserveState = false } = {}) {
     <div class="charts-row" style="margin-bottom:24px">
       <div class="chart-card" style="grid-column:1/-1">
         <h3>Despesas por Categoria</h3>
-        <div class="chart-container" style="height:280px"><canvas id="report-chart"></canvas></div>
+        <div class="chart-container" style="height:300px"><canvas id="report-chart"></canvas></div>
       </div>
     </div>
     ` : ''}
@@ -915,28 +915,38 @@ async function renderReport({ preserveState = false } = {}) {
   if (data.categories.length > 0) {
     const ctx = document.getElementById('report-chart').getContext('2d');
     if (state.charts.report) state.charts.report.destroy();
+    const pieColors = [
+      '#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6',
+      '#06B6D4','#F97316','#EC4899','#14B8A6','#6366F1','#84CC16','#E11D48',
+    ];
     state.charts.report = new Chart(ctx, {
-      type: 'bar',
+      type: 'doughnut',
       data: {
         labels: data.categories.map((c) => c.name),
         datasets: [{
-          label: 'Total',
           data: data.categories.map((c) => c.total),
-          backgroundColor: '#3B82F6',
-          borderRadius: 6,
+          backgroundColor: data.categories.map((_, i) => pieColors[i % pieColors.length]),
+          borderWidth: 2,
+          borderColor: '#fff',
+          hoverOffset: 8,
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '58%',
         plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => ` ${fmt(ctx.raw)}` } },
-        },
-        scales: {
-          y: {
-            ticks: { callback: (v) => 'R$' + new Intl.NumberFormat('pt-BR').format(v) },
-            beginAtZero: true,
+          legend: {
+            position: 'right',
+            labels: { boxWidth: 13, padding: 16, font: { size: 12 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const pct = data.total_expense ? ((ctx.raw / data.total_expense) * 100).toFixed(1) : 0;
+                return ` ${ctx.label}: ${fmt(ctx.raw)} (${pct}%)`;
+              },
+            },
           },
         },
       },
