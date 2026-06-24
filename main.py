@@ -478,6 +478,73 @@ async def get_report(month: int, year: int, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/report/multi")
+async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)):
+    month_list = [int(m.strip()) for m in months.split(",") if m.strip().isdigit()]
+    if not month_list:
+        return {"months": [], "year": year, "categories": [], "total_expense": 0.0, "total_income": 0.0}
+
+    expense_txs = []
+    income_total = 0.0
+
+    for m in month_list:
+        txs = (
+            _month_filter(db.query(Transaction), m, year)
+            .filter(
+                Transaction.type == "expense",
+                Transaction.amount_invalid == False,
+                Transaction.amount.isnot(None),
+            )
+            .all()
+        )
+        expense_txs.extend(txs)
+
+        income = (
+            _month_filter(db.query(Transaction), m, year)
+            .filter(
+                Transaction.type == "income",
+                Transaction.amount_invalid == False,
+                Transaction.amount.isnot(None),
+            )
+            .all()
+        )
+        income_total += sum(t.amount for t in income)
+
+    total_expense = sum(t.amount for t in expense_txs)
+
+    cat_txs: dict = {}
+    for t in expense_txs:
+        cat_txs.setdefault(t.category, []).append(t)
+
+    categories = []
+    for cat, txs in sorted(cat_txs.items(), key=lambda x: sum(t.amount for t in x[1]), reverse=True):
+        total = sum(t.amount for t in txs)
+        categories.append(
+            {
+                "name": cat,
+                "total": round(total, 2),
+                "count": len(txs),
+                "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
+                "transactions": [
+                    {
+                        "description": t.description,
+                        "amount": round(t.amount, 2),
+                        "date": t.date.isoformat() if t.date else None,
+                    }
+                    for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
+                ],
+            }
+        )
+
+    return {
+        "months": month_list,
+        "year": year,
+        "categories": categories,
+        "total_expense": round(total_expense, 2),
+        "total_income": round(income_total, 2),
+    }
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 

@@ -26,7 +26,7 @@ const state = {
     page: 1,
     perPage: 20,
   },
-  report: { month: now.getMonth() + 1, year: now.getFullYear() },
+  report: { months: [now.getMonth() + 1], year: now.getFullYear(), sortBy: 'total', sortDir: 'desc', openCats: new Set(), sortedCats: [], data: null },
   categories: [],
   invalidCount: 0,
   editingTxId: null,
@@ -846,19 +846,31 @@ function deleteCategory(id, name, count) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function renderReport() {
-  const { month, year } = state.report;
-  const data = await api.get(`/api/report?month=${month}&year=${year}`);
+  const { months, year } = state.report;
+  const data = await api.get(`/api/report/multi?months=${months.join(',')}&year=${year}`);
+  state.report.data = data;
+  state.report.openCats = new Set();
 
   const main = document.getElementById('main-content');
+
+  const shortMonths = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const pillsHtml = shortMonths.map((name, i) => {
+    const m = i + 1;
+    return `<button class="month-pill${months.includes(m) ? ' active' : ''}" data-month="${m}">${name}</button>`;
+  }).join('');
+
+  const periodLabel = months.length === 1
+    ? `${monthName(months[0])} ${year}`
+    : `${months.length} meses — ${year}`;
+
   main.innerHTML = `
     <div class="view-header">
-      <h1>Relatório — ${monthName(month)} ${year}</h1>
+      <h1>Relatório — ${periodLabel}</h1>
       <div class="header-actions">
-        <div class="period-selector">
-          <select id="rep-month">${monthOptions(month)}</select>
+        <div class="period-selector" style="flex-wrap:wrap;gap:8px;align-items:center">
           <select id="rep-year">${yearOptions(year)}</select>
+          <div class="month-pills">${pillsHtml}</div>
         </div>
-        <a href="/api/export?month=${month}&year=${year}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
       </div>
     </div>
 
@@ -877,63 +889,23 @@ async function renderReport() {
       </div>
     </div>
 
+    ${data.categories.length > 0 ? `
     <div class="charts-row" style="margin-bottom:24px">
       <div class="chart-card" style="grid-column:1/-1">
-        <h3>Despesas por Categoria vs Mês Anterior</h3>
+        <h3>Despesas por Categoria</h3>
         <div class="chart-container" style="height:280px"><canvas id="report-chart"></canvas></div>
       </div>
     </div>
+    ` : ''}
 
     <div class="table-card">
-      <div style="padding:16px 16px 0"><span class="section-title">Detalhamento por Categoria</span></div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Categoria</th>
-              <th class="text-right">Total</th>
-              <th class="text-right">% do Total</th>
-              <th>Distribuição</th>
-              <th class="text-right">Mês Anterior</th>
-              <th class="text-right">Variação</th>
-              <th class="text-right">Qtd</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.categories.length === 0
-              ? '<tr><td colspan="7" style="text-align:center;padding:32px;color:#64748B">Sem despesas neste mês</td></tr>'
-              : data.categories.map((c) => {
-                  const deltaClass = c.delta > 0 ? 'delta-up' : c.delta < 0 ? 'delta-down' : 'delta-zero';
-                  const deltaSign = c.delta > 0 ? '+' : '';
-                  return `<tr>
-                    <td><span class="badge badge-cat">${esc(c.name)}</span></td>
-                    <td class="text-right amount-expense">${fmt(c.total)}</td>
-                    <td class="text-right font-mono">${c.percentage}%</td>
-                    <td style="min-width:100px">
-                      <div class="progress-bar"><div class="progress-fill" style="width:${c.percentage}%"></div></div>
-                    </td>
-                    <td class="text-right text-muted font-mono">${fmt(c.prev_total)}</td>
-                    <td class="text-right ${deltaClass}">${deltaSign}${fmt(c.delta)}</td>
-                    <td class="text-right text-muted">${c.count}</td>
-                  </tr>`;
-                }).join('')}
-          </tbody>
-          ${data.categories.length > 0 ? `
-          <tfoot>
-            <tr style="border-top:2px solid #E2E8F0;background:#F8FAFC">
-              <td><strong>Total</strong></td>
-              <td class="text-right"><strong class="amount-expense">${fmt(data.total_expense)}</strong></td>
-              <td class="text-right"><strong>100%</strong></td>
-              <td></td><td></td><td></td>
-              <td class="text-right"><strong>${data.categories.reduce((s, c) => s + c.count, 0)}</strong></td>
-            </tr>
-          </tfoot>` : ''}
-        </table>
+      <div style="padding:16px 16px 0"><span class="section-title">Gastos por Categoria</span></div>
+      <div class="table-scroll" id="cat-breakdown-body">
+        ${renderReportCatRows(data)}
       </div>
     </div>
   `;
 
-  // Gráfico comparativo
   if (data.categories.length > 0) {
     const ctx = document.getElementById('report-chart').getContext('2d');
     if (state.charts.report) state.charts.report.destroy();
@@ -941,27 +913,19 @@ async function renderReport() {
       type: 'bar',
       data: {
         labels: data.categories.map((c) => c.name),
-        datasets: [
-          {
-            label: `${monthName(month)} ${year}`,
-            data: data.categories.map((c) => c.total),
-            backgroundColor: '#3B82F6',
-            borderRadius: 6,
-          },
-          {
-            label: 'Mês anterior',
-            data: data.categories.map((c) => c.prev_total),
-            backgroundColor: '#CBD5E1',
-            borderRadius: 6,
-          },
-        ],
+        datasets: [{
+          label: 'Total',
+          data: data.categories.map((c) => c.total),
+          backgroundColor: '#3B82F6',
+          borderRadius: 6,
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top' },
-          tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` } },
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ` ${fmt(ctx.raw)}` } },
         },
         scales: {
           y: {
@@ -973,13 +937,144 @@ async function renderReport() {
     });
   }
 
-  document.getElementById('rep-month').addEventListener('change', (e) => {
-    state.report.month = +e.target.value;
-    renderReport();
-  });
   document.getElementById('rep-year').addEventListener('change', (e) => {
     state.report.year = +e.target.value;
     renderReport();
+  });
+
+  document.querySelectorAll('.month-pill').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const m = +btn.dataset.month;
+      const idx = state.report.months.indexOf(m);
+      if (idx >= 0) {
+        if (state.report.months.length === 1) return;
+        state.report.months.splice(idx, 1);
+      } else {
+        state.report.months.push(m);
+        state.report.months.sort((a, b) => a - b);
+      }
+      renderReport();
+    });
+  });
+
+  attachCatRowListeners();
+}
+
+function renderReportCatRows(data) {
+  const { sortBy, sortDir, openCats } = state.report;
+
+  const cats = [...data.categories].sort((a, b) => {
+    let va = a[sortBy], vb = b[sortBy];
+    if (sortBy === 'name') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  state.report.sortedCats = cats;
+
+  const si = (col) => {
+    if (state.report.sortBy !== col) return '<span class="sort-icon">↕</span>';
+    return `<span class="sort-icon active">${state.report.sortDir === 'asc' ? '↑' : '↓'}</span>`;
+  };
+
+  if (cats.length === 0) {
+    return `<table><tbody><tr><td colspan="3" style="text-align:center;padding:32px;color:#64748B">Sem despesas no período selecionado</td></tr></tbody></table>`;
+  }
+
+  return `<table>
+    <thead>
+      <tr>
+        <th class="cat-sort-th" data-col="name">Categoria ${si('name')}</th>
+        <th class="text-right cat-sort-th" data-col="total">Total ${si('total')}</th>
+        <th class="text-right cat-sort-th" data-col="count">Qtd ${si('count')}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${cats.map((c, idx) => {
+        const isOpen = openCats.has(c.name);
+        const txRows = c.transactions.map((t) => {
+          const dayMonth = t.date ? t.date.slice(8, 10) + '/' + t.date.slice(5, 7) : '—';
+          return `<tr>
+            <td class="inner-tx-desc">${esc(t.description)}</td>
+            <td class="text-right amount-expense">${fmt(t.amount)}</td>
+            <td class="text-right text-muted">${dayMonth}</td>
+          </tr>`;
+        }).join('');
+        return `
+        <tr class="cat-row" data-idx="${idx}">
+          <td>
+            <span class="cat-toggle${isOpen ? ' open' : ''}">▶</span>
+            <span class="badge badge-cat">${esc(c.name)}</span>
+          </td>
+          <td class="text-right amount-expense">${fmt(c.total)}</td>
+          <td class="text-right text-muted">${c.count}</td>
+        </tr>
+        <tr class="cat-detail-row${isOpen ? '' : ' hidden'}" data-idx-detail="${idx}">
+          <td colspan="3" class="cat-detail-td">
+            <table class="inner-tx-table">
+              <thead>
+                <tr>
+                  <th class="inner-tx-desc">Descrição</th>
+                  <th class="text-right">Valor</th>
+                  <th class="text-right">Data</th>
+                </tr>
+              </thead>
+              <tbody>${txRows}</tbody>
+              <tfoot>
+                <tr>
+                  <td class="inner-tx-desc"><strong>Total ${esc(c.name)}</strong></td>
+                  <td class="text-right"><strong class="amount-expense">${fmt(c.total)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="border-top:2px solid #E2E8F0;background:#F8FAFC">
+        <td><strong>Total</strong></td>
+        <td class="text-right"><strong class="amount-expense">${fmt(data.total_expense)}</strong></td>
+        <td class="text-right"><strong>${data.categories.reduce((s, c) => s + c.count, 0)}</strong></td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+function attachCatRowListeners() {
+  document.querySelectorAll('.cat-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const idx = +row.dataset.idx;
+      const catName = state.report.sortedCats[idx].name;
+      const detailRow = document.querySelector(`.cat-detail-row[data-idx-detail="${idx}"]`);
+      const toggle = row.querySelector('.cat-toggle');
+      if (!detailRow) return;
+      if (state.report.openCats.has(catName)) {
+        state.report.openCats.delete(catName);
+        detailRow.classList.add('hidden');
+        toggle.classList.remove('open');
+      } else {
+        state.report.openCats.add(catName);
+        detailRow.classList.remove('hidden');
+        toggle.classList.add('open');
+      }
+    });
+  });
+
+  document.querySelectorAll('.cat-sort-th').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (state.report.sortBy === col) {
+        state.report.sortDir = state.report.sortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        state.report.sortBy = col;
+        state.report.sortDir = col === 'name' ? 'asc' : 'desc';
+      }
+      document.getElementById('cat-breakdown-body').innerHTML = renderReportCatRows(state.report.data);
+      attachCatRowListeners();
+    });
   });
 }
 

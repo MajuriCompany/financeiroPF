@@ -596,3 +596,61 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
   display: flex; gap: 8px; align-items: flex-start;
   margin-bottom: 16px;
 }
+
+/* ── Report Multi-Month Pills ─────────────────────────────────────────── */
+.month-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.month-pill {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 11px;
+  font-size: 12px; font-weight: 500;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.month-pill:hover { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+.month-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+/* ── Category Accordion ───────────────────────────────────────────────── */
+.cat-row { cursor: pointer; }
+.cat-toggle {
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 7px;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+  vertical-align: middle;
+}
+.cat-toggle.open { transform: rotate(90deg); }
+.cat-detail-td { padding: 0 !important; background: #FAFBFC; }
+.cat-sort-th { cursor: pointer; user-select: none; }
+.cat-sort-th:hover { color: var(--primary); }
+.sort-icon { font-size: 10px; color: var(--text-muted); margin-left: 3px; }
+.sort-icon.active { color: var(--primary); }
+
+/* ── Inner Transaction Table ─────────────────────────────────────────── */
+.inner-tx-table { width: 100%; border-collapse: collapse; }
+.inner-tx-table thead th {
+  background: #F0F4FF;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #4F46E5;
+  padding: 8px 16px;
+  border-bottom: 1px solid #DDE3FF;
+}
+.inner-tx-table tbody td {
+  padding: 9px 16px;
+  font-size: 12.5px;
+  border-bottom: 1px solid #ECEEF2;
+  color: var(--text-2);
+}
+.inner-tx-table tbody tr:last-child td { border-bottom: none; }
+.inner-tx-table tfoot td {
+  padding: 9px 16px;
+  font-size: 12.5px;
+  border-top: 1px solid #DDE3FF;
+  background: #EAEDFF;
+}
+.inner-tx-desc { padding-left: 40px !important; }
