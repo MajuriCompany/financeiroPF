@@ -938,7 +938,26 @@ async function renderReport({ preserveState = false } = {}) {
         plugins: {
           legend: {
             position: 'right',
-            labels: { boxWidth: 13, padding: 16, font: { size: 12 } },
+            labels: {
+              boxWidth: 13,
+              padding: 16,
+              font: { size: 12 },
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((label, i) => {
+                  const value = ds.data[i];
+                  const pct = data.total_expense ? ((value / data.total_expense) * 100).toFixed(1) : '0.0';
+                  return {
+                    text: `${label}  ${fmt(value)}  (${pct}%)`,
+                    fillStyle: ds.backgroundColor[i],
+                    strokeStyle: '#fff',
+                    lineWidth: 2,
+                    index: i,
+                    hidden: false,
+                  };
+                });
+              },
+            },
           },
           tooltip: {
             callbacks: {
