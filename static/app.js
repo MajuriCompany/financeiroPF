@@ -7,6 +7,8 @@ const _txCache = {};
 // ESTADO GLOBAL
 // ═══════════════════════════════════════════════════════════════════════════
 
+const RESPONSIBLE_OPTIONS = ['Nicolas', 'Camila', 'Juntos', 'Outros'];
+
 const now = new Date();
 const state = {
   view: 'dashboard',
@@ -33,6 +35,7 @@ const state = {
   editingCatId: null,
   confirmCallback: null,
   charts: {},
+  importState: { step: 1, source: null, rows: [], importedCount: 0 },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -571,6 +574,7 @@ async function renderTransactions() {
       <h1>Transações</h1>
       <div class="header-actions">
         <a href="/api/export${s.period ? buildQuery((() => { const [df,dt] = computePeriodRange(s.period, s.year); return {date_from: df, date_to: dt, token: api.token()}; })()) : buildQuery({ month: s.month, year: s.year, token: api.token() })}" class="btn btn-ghost btn-sm">↓ Exportar CSV</a>
+        <button class="btn btn-ghost btn-sm" onclick="openImportModal()">⇪ Importar</button>
         <button class="btn btn-primary btn-sm" onclick="openTransactionModal()">+ Nova Transação</button>
       </div>
     </div>
@@ -619,7 +623,7 @@ async function renderTransactions() {
         <label>Responsável</label>
         <select id="f-resp">
           <option value="">Todos</option>
-          ${['Nicolas','Camila','Juntos','Outros'].map((r) => `<option ${r === s.responsible ? 'selected' : ''}>${r}</option>`).join('')}
+          ${RESPONSIBLE_OPTIONS.map((r) => `<option ${r === s.responsible ? 'selected' : ''}>${r}</option>`).join('')}
         </select>
       </div>
       <div class="filter-group">
@@ -1259,6 +1263,306 @@ function attachCatRowListeners() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// IMPORTAÇÃO DE CSV/OFX
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function openImportModal() {
+  state.importState = { step: 1, source: null, rows: [], importedCount: 0 };
+  if (!state.categories.length) {
+    state.categories = await api.get('/api/categories');
+  }
+  document.getElementById('import-modal').classList.remove('hidden');
+  renderImportModal();
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.add('hidden');
+}
+
+function renderImportModal() {
+  const body = document.getElementById('import-body');
+  const title = document.getElementById('import-modal-title');
+  const s = state.importState;
+  if (s.step === 1) {
+    title.textContent = 'Importar transações';
+    body.innerHTML = renderImportStep1();
+  } else if (s.step === 2) {
+    title.textContent = s.source === 'card' ? 'Revisar fatura do cartão' : 'Revisar extrato da conta';
+    body.innerHTML = renderImportStep2();
+  } else {
+    title.textContent = 'Importação concluída';
+    body.innerHTML = renderImportStep3();
+  }
+}
+
+function renderImportStep1() {
+  const s = state.importState;
+  return `
+    <div class="import-source-picker">
+      <button type="button" class="import-source-btn ${s.source === 'card' ? 'active' : ''}" onclick="selectImportSource('card')">
+        <strong>Fatura do Cartão</strong>
+        <span>Arquivo .csv exportado do internet banking Sicredi</span>
+      </button>
+      <button type="button" class="import-source-btn ${s.source === 'account' ? 'active' : ''}" onclick="selectImportSource('account')">
+        <strong>Extrato da Conta</strong>
+        <span>Arquivo .ofx exportado do internet banking Sicredi</span>
+      </button>
+    </div>
+    ${s.source ? `
+      <div id="import-dropzone" class="dropzone"
+           ondragover="importDragOver(event)" ondragleave="importDragLeave(event)" ondrop="importDrop(event)"
+           onclick="document.getElementById('import-file-input').click()">
+        <div class="dropzone-icon">📄</div>
+        <p>Arraste o arquivo <strong>${s.source === 'card' ? '.csv' : '.ofx'}</strong> aqui ou clique para selecionar</p>
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderImportStep2() {
+  const s = state.importState;
+  const selected = s.rows.filter((r) => r.include);
+  const allSelected = s.rows.length > 0 && s.rows.every((r) => r.include);
+  const canConfirm = selected.length > 0 && selected.every((r) => r.category);
+
+  return `
+    <div class="import-bulk-bar">
+      <span>${selected.length} de ${s.rows.length} selecionadas</span>
+      <select id="bulk-cat-select">
+        <option value="">Categoria em massa...</option>
+        ${state.categories.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="bulkApplyCategory()">Aplicar</button>
+      <select id="bulk-resp-select">
+        <option value="">Responsável em massa...</option>
+        ${RESPONSIBLE_OPTIONS.map((r) => `<option value="${r}">${r}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="bulkApplyResponsible()">Aplicar</button>
+    </div>
+    <div class="table-card">
+      <div class="table-scroll import-table-scroll">
+        <table class="import-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" ${allSelected ? 'checked' : ''} onchange="toggleImportSelectAll(this.checked)"></th>
+              <th>Estabelecimento</th>
+              <th>Data</th>
+              <th>Valor</th>
+              <th>Categoria</th>
+              <th>Responsável</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${s.rows.map((r, i) => renderImportRow(r, i)).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="closeImportModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="import-confirm-btn" ${canConfirm ? '' : 'disabled'} onclick="confirmImport()">
+        Importar ${selected.length} transaç${selected.length === 1 ? 'ão' : 'ões'}
+      </button>
+    </div>
+  `;
+}
+
+function renderImportRow(r, i) {
+  return `
+    <tr>
+      <td><input type="checkbox" ${r.include ? 'checked' : ''} onchange="toggleImportRowInclude(${i})"></td>
+      <td class="td-desc">
+        ${r.editing
+          ? `<input type="text" class="import-rename-input" value="${esc(r.description)}" onblur="commitImportRename(${i}, this.value)" onkeydown="if(event.key==='Enter') this.blur()">`
+          : `<span class="import-desc" onclick="startImportRename(${i})">${esc(r.description)}</span>
+             ${r.description !== r.original_description ? `<span class="desc-notes">Original: ${esc(r.original_description)}</span>` : ''}`
+        }
+      </td>
+      <td>${fmtDate(r.date)}</td>
+      <td class="${r.amount < 0 ? 'import-amount-neg' : ''}">${fmt(r.amount)}</td>
+      <td>
+        <select onchange="updateImportRow(${i}, 'category', this.value)">
+          <option value="">— Selecione —</option>
+          ${state.categories.map((c) => `<option value="${esc(c.name)}" ${c.name === r.category ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select onchange="updateImportRow(${i}, 'responsible', this.value)">
+          ${RESPONSIBLE_OPTIONS.map((rr) => `<option value="${rr}" ${rr === r.responsible ? 'selected' : ''}>${rr}</option>`).join('')}
+        </select>
+      </td>
+    </tr>
+  `;
+}
+
+function renderImportStep3() {
+  const s = state.importState;
+  return `
+    <div class="import-success">
+      <div class="import-success-icon">✅</div>
+      <h3>${s.importedCount} transaç${s.importedCount === 1 ? 'ão importada' : 'ões importadas'}!</h3>
+      <p>As transações já aparecem na sua lista.</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" onclick="closeImportModal()">Concluir</button>
+    </div>
+  `;
+}
+
+function selectImportSource(source) {
+  state.importState.source = source;
+  renderImportModal();
+}
+
+function importDragOver(e) {
+  e.preventDefault();
+  document.getElementById('import-dropzone')?.classList.add('dropzone-active');
+}
+function importDragLeave() {
+  document.getElementById('import-dropzone')?.classList.remove('dropzone-active');
+}
+async function importDrop(e) {
+  e.preventDefault();
+  document.getElementById('import-dropzone')?.classList.remove('dropzone-active');
+  const file = e.dataTransfer.files[0];
+  if (file) await uploadImportFile(file);
+}
+async function importFileSelected(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) await uploadImportFile(file);
+}
+
+async function uploadImportFile(file) {
+  const s = state.importState;
+  const expectedExt = s.source === 'card' ? '.csv' : '.ofx';
+  if (!file.name.toLowerCase().endsWith(expectedExt)) {
+    showToast(`Selecione um arquivo ${expectedExt}`, 'error');
+    return;
+  }
+
+  const zone = document.getElementById('import-dropzone');
+  if (zone) zone.innerHTML = '<div class="dropzone-icon">⏳</div><p>Processando...</p>';
+
+  const url = s.source === 'card' ? '/api/import/card/preview' : '/api/import/account/preview';
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${api.token()}` },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Erro ${res.status}`);
+
+    s.rows = data.rows.map((r) => ({
+      include: true,
+      description: r.description,
+      original_description: r.original_description,
+      amount: r.amount,
+      date: r.date,
+      category: '',
+      responsible: 'Juntos',
+      payment_method: s.source === 'card' ? 'Cartão de Crédito' : (r.payment_method || 'PIX'),
+      editing: false,
+    }));
+
+    if (!s.rows.length) {
+      showToast('Nenhuma transação encontrada nesse arquivo', 'error');
+      renderImportModal();
+      return;
+    }
+
+    s.step = 2;
+    renderImportModal();
+  } catch (err) {
+    showToast('Erro ao ler arquivo: ' + err.message, 'error');
+    renderImportModal();
+  }
+}
+
+function toggleImportRowInclude(i) {
+  state.importState.rows[i].include = !state.importState.rows[i].include;
+  renderImportModal();
+}
+
+function toggleImportSelectAll(checked) {
+  state.importState.rows.forEach((r) => { r.include = checked; });
+  renderImportModal();
+}
+
+function startImportRename(i) {
+  state.importState.rows[i].editing = true;
+  renderImportModal();
+  document.querySelector('.import-rename-input')?.focus();
+}
+
+function commitImportRename(i, value) {
+  const r = state.importState.rows[i];
+  r.description = value.trim() || r.description;
+  r.editing = false;
+  renderImportModal();
+}
+
+function updateImportRow(i, field, value) {
+  state.importState.rows[i][field] = value;
+  renderImportModal();
+}
+
+function bulkApplyCategory() {
+  const value = document.getElementById('bulk-cat-select').value;
+  if (!value) return;
+  state.importState.rows.forEach((r) => { if (r.include) r.category = value; });
+  renderImportModal();
+}
+
+function bulkApplyResponsible() {
+  const value = document.getElementById('bulk-resp-select').value;
+  if (!value) return;
+  state.importState.rows.forEach((r) => { if (r.include) r.responsible = value; });
+  renderImportModal();
+}
+
+async function confirmImport() {
+  const s = state.importState;
+  const rows = s.rows.filter((r) => r.include);
+  if (!rows.length) return;
+  if (rows.some((r) => !r.category)) {
+    showToast('Escolha uma categoria para todas as linhas marcadas', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('import-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importando...'; }
+
+  const payload = {
+    rows: rows.map((r) => ({
+      description: r.description,
+      amount: r.amount,
+      date: r.date,
+      category: r.category,
+      responsible: r.responsible || null,
+      payment_method: r.payment_method || null,
+      notes: r.description !== r.original_description ? `Original: ${r.original_description}` : null,
+    })),
+  };
+
+  try {
+    const result = await api.post('/api/import/confirm', payload);
+    s.importedCount = result.imported;
+    s.step = 3;
+    renderImportModal();
+    if (state.view === 'transactions') renderTransactions();
+    else if (state.view === 'dashboard') renderDashboard();
+  } catch (err) {
+    showToast('Erro ao importar: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = `Importar ${rows.length} transações`; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MODAL DE CONFIRMAÇÃO
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1299,15 +1603,17 @@ document.addEventListener('keydown', (e) => {
     closeTransactionModal();
     closeConfirmModal();
     closeCatModal();
+    closeImportModal();
   }
 });
 
-['tx-modal', 'confirm-modal', 'cat-modal'].forEach((id) => {
+['tx-modal', 'confirm-modal', 'cat-modal', 'import-modal'].forEach((id) => {
   document.getElementById(id).addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       closeTransactionModal();
       closeConfirmModal();
       closeCatModal();
+      closeImportModal();
     }
   });
 });

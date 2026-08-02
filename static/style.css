@@ -545,6 +545,57 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 16px 24px 20px; border-top: 1px solid var(--border);
 }
+.modal.modal-lg { max-width: 920px; }
+
+/* ── Importação ───────────────────────────────────────────────────────── */
+.import-source-picker { display: flex; gap: 12px; margin-bottom: 18px; }
+.import-source-btn {
+  flex: 1; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  transition: border-color var(--transition), background var(--transition);
+}
+.import-source-btn strong { font-size: 14px; color: var(--text); }
+.import-source-btn span { font-size: 12px; color: var(--text-muted); }
+.import-source-btn:hover { border-color: var(--border-dk); }
+.import-source-btn.active { border-color: var(--primary); background: var(--primary-bg); }
+
+.dropzone {
+  border: 2px dashed var(--border); border-radius: var(--radius-sm);
+  padding: 40px 20px; text-align: center; cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.dropzone:hover, .dropzone.dropzone-active { border-color: var(--primary); background: var(--primary-bg); }
+.dropzone-icon { font-size: 32px; margin-bottom: 8px; }
+.dropzone p { color: var(--text-muted); font-size: 13px; }
+
+.import-bulk-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 14px; font-size: 13px; color: var(--text-muted);
+}
+.import-bulk-bar select {
+  border: 1px solid var(--border); border-radius: var(--radius-xs);
+  padding: 6px 10px; font-size: 12.5px; background: var(--surface); color: var(--text);
+}
+.import-table-scroll { max-height: 420px; overflow-y: auto; }
+.import-table select {
+  width: 100%; border: 1px solid var(--border); border-radius: var(--radius-xs);
+  padding: 6px 8px; font-size: 12.5px; background: var(--surface); color: var(--text);
+}
+.import-table td { padding: 8px 12px; }
+.import-desc { font-weight: 600; cursor: pointer; }
+.import-desc:hover { text-decoration: underline; color: var(--primary); }
+.import-rename-input {
+  width: 100%; border: 1px solid var(--primary); border-radius: var(--radius-xs);
+  padding: 5px 8px; font-size: 13px;
+}
+.import-amount-neg { color: var(--red); font-weight: 600; }
+
+.import-success { text-align: center; padding: 20px 0 8px; }
+.import-success-icon { font-size: 44px; margin-bottom: 10px; }
+.import-success h3 { font-size: 16px; margin-bottom: 6px; }
+.import-success p { color: var(--text-muted); font-size: 13px; }
 
 /* ── Categories View ──────────────────────────────────────────────────── */
 .cat-list { display: flex; flex-direction: column; gap: 0; }

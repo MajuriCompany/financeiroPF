@@ -6,7 +6,7 @@
   <title>Finanças Pessoais</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=4" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -99,6 +99,9 @@
         <div class="sidebar-footer">
           <button class="btn btn-primary btn-full" onclick="openTransactionModal()">
             + Nova Transação
+          </button>
+          <button class="btn btn-ghost btn-full" onclick="openImportModal()">
+            ⇪ Importar CSV/OFX
           </button>
           <div class="sidebar-user">
             <div class="user-avatar" id="sidebar-avatar">?</div>
@@ -241,6 +244,18 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=4"></script>
+  <!-- Modal de importação -->
+  <div id="import-modal" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 id="import-modal-title">Importar transações</h2>
+        <button onclick="closeImportModal()" class="modal-close">✕</button>
+      </div>
+      <div id="import-body" class="modal-body"></div>
+    </div>
+  </div>
+  <input type="file" id="import-file-input" accept=".csv,.ofx" class="hidden" onchange="importFileSelected(event)" />
+
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>

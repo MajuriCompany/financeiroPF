@@ -6,7 +6,7 @@ from datetime import date as DateT, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import bcrypt as _bcrypt
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
 from models import Category, Transaction, User
+from importers import normalize_text, parse_card_csv, decode_ofx_bytes, parse_account_ofx
 
 Base.metadata.create_all(bind=engine)
 
@@ -229,6 +230,20 @@ class CategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
+
+
+class ImportRow(BaseModel):
+    description: str
+    amount: float
+    date: DateT
+    category: str
+    responsible: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ImportConfirmRequest(BaseModel):
+    rows: List[ImportRow]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -452,6 +467,59 @@ async def delete_category(
 
     db.delete(cat)
     db.commit()
+
+
+# ── Importação (fatura cartão / extrato conta) ─────────────────────────────────
+
+
+@app.post("/api/import/card/preview")
+async def import_card_preview(file: UploadFile):
+    raw = await file.read()
+    try:
+        rows = parse_card_csv(normalize_text(raw))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"rows": rows}
+
+
+@app.post("/api/import/account/preview")
+async def import_account_preview(file: UploadFile):
+    raw = await file.read()
+    try:
+        rows = parse_account_ofx(decode_ofx_bytes(raw))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"rows": rows}
+
+
+@app.post("/api/import/confirm", status_code=201)
+async def import_confirm(body: ImportConfirmRequest, db: Session = Depends(get_db)):
+    existing_categories = {c.name for c in db.query(Category).all()}
+    imported = 0
+
+    for row in body.rows:
+        if row.category not in existing_categories:
+            db.add(Category(id=str(uuid.uuid4()), name=row.category))
+            existing_categories.add(row.category)
+
+        t = Transaction(
+            id=str(uuid.uuid4()),
+            description=row.description,
+            amount=row.amount,
+            type="expense",
+            category=row.category,
+            payment_method=row.payment_method,
+            responsible=row.responsible,
+            notes=row.notes,
+            date=row.date,
+            created_at=datetime.utcnow(),
+            amount_invalid=False,
+        )
+        db.add(t)
+        imported += 1
+
+    db.commit()
+    return {"imported": imported}
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
