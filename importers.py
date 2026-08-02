@@ -3,9 +3,11 @@ Parsers para importação em lote de fatura de cartão (CSV) e extrato de conta 
 Funções puras: recebem bytes/texto, devolvem list[dict]. Sem acesso a banco.
 """
 
+import calendar
 import csv
 import io
 import re
+from collections import Counter
 from datetime import datetime
 
 
@@ -39,6 +41,33 @@ def _parse_br_date(raw: str) -> str:
     return datetime.strptime(raw.strip(), '%d/%m/%Y').date().isoformat()
 
 
+def _find_invoice_month(lines: list[str], header_idx: int) -> tuple[int, int] | None:
+    """Deriva o mês de referência da fatura a partir de 'Data de Vencimento' nos
+    metadados (linhas antes do header). O vencimento cai no mês seguinte ao
+    fechamento, então o mês da fatura é o mês anterior ao vencimento."""
+    for line in lines[:header_idx]:
+        cols = line.split(';')
+        if len(cols) >= 2 and cols[0].strip() == 'Data de Vencimento':
+            try:
+                due = datetime.strptime(cols[1].strip(), '%d/%m/%Y').date()
+            except ValueError:
+                return None
+            year, month = due.year, due.month - 1
+            if month == 0:
+                month, year = 12, year - 1
+            return (year, month)
+    return None
+
+
+def _adjust_to_invoice_month(date_iso: str, invoice_month: tuple[int, int]) -> str:
+    year, month = invoice_month
+    d = datetime.strptime(date_iso, '%Y-%m-%d').date()
+    if (d.year, d.month) == (year, month):
+        return date_iso
+    last_day = calendar.monthrange(year, month)[1]
+    return datetime(year, month, min(d.day, last_day)).date().isoformat()
+
+
 def parse_card_csv(text: str) -> list[dict]:
     lines = text.splitlines()
     header_idx = None
@@ -49,6 +78,8 @@ def parse_card_csv(text: str) -> list[dict]:
             break
     if header_idx is None:
         raise ValueError('Cabeçalho da fatura não encontrado no CSV (esperado "Data;Descrição;...")')
+
+    invoice_month = _find_invoice_month(lines, header_idx)
 
     body = '\n'.join(lines[header_idx + 1:])
     reader = csv.reader(io.StringIO(body), delimiter=';')
@@ -79,6 +110,15 @@ def parse_card_csv(text: str) -> list[dict]:
             'source_name': nome_raw.strip(),
             'parcela': parcela_raw.strip() or None,
         })
+
+    if invoice_month is None and rows:
+        year_months = [tuple(int(x) for x in r['date'].split('-')[:2]) for r in rows]
+        invoice_month = Counter(year_months).most_common(1)[0][0]
+
+    if invoice_month:
+        for r in rows:
+            r['date'] = _adjust_to_invoice_month(r['date'], invoice_month)
+
     return rows
 
 
