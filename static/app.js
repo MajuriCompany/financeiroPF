@@ -1267,7 +1267,7 @@ async function renderReport({ preserveState = false } = {}) {
   }
   if (data.groups && data.groups.length > 0) {
     if (state.charts.reportGroups) state.charts.reportGroups.destroy();
-    state.charts.reportGroups = renderBreakdownDoughnut('report-group-chart', data.groups, data.total_expense);
+    state.charts.reportGroups = renderBreakdownDoughnut('report-group-chart', data.groups, data.groups_total);
 
     renderGroupDrilldownChart(data, state.report.selectedGroup);
     document.getElementById('group-drilldown-select').addEventListener('change', (e) => {
@@ -1577,7 +1577,7 @@ function renderReportGroupRows(data) {
     <tfoot>
       <tr style="border-top:2px solid #E2E8F0;background:#F8FAFC">
         <td><strong>Total</strong></td>
-        <td class="text-right"><strong class="amount-expense">${fmt(data.total_expense)}</strong></td>
+        <td class="text-right"><strong class="amount-expense">${fmt(data.groups_total)}</strong></td>
         <td class="text-right"><strong>100,0%</strong></td>
         <td class="text-right"><strong>${data.groups.reduce((s, g) => s + g.count, 0)}</strong></td>
       </tr>

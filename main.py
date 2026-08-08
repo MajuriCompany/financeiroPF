@@ -751,9 +751,10 @@ async def get_report(month: int, year: int, db: Session = Depends(get_db)):
 async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)):
     month_list = [int(m.strip()) for m in months.split(",") if m.strip().isdigit()]
     if not month_list:
-        return {"months": [], "year": year, "categories": [], "groups": [], "total_expense": 0.0, "total_income": 0.0}
+        return {"months": [], "year": year, "categories": [], "groups": [], "groups_total": 0.0, "total_expense": 0.0, "total_income": 0.0}
 
     expense_txs = []
+    invest_txs = []
     income_total = 0.0
 
     for m in month_list:
@@ -767,6 +768,17 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
             .all()
         )
         expense_txs.extend(txs)
+
+        investments = (
+            _month_filter(db.query(Transaction), m, year)
+            .filter(
+                Transaction.type == "investment",
+                Transaction.amount_invalid == False,
+                Transaction.amount.isnot(None),
+            )
+            .all()
+        )
+        invest_txs.extend(investments)
 
         income = (
             _month_filter(db.query(Transaction), m, year)
@@ -817,9 +829,13 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
             }
         )
 
+    # Grupos também contam aportes de investimento (ex: categoria "Investimentos" sob um
+    # grupo "Liberdade Financeira") — diferente de "Despesas por Categoria", que é só despesa.
     group_txs: dict = {}
-    for t in expense_txs:
+    for t in expense_txs + invest_txs:
         group_txs.setdefault(cat_to_group.get(t.category, "Sem Grupo"), []).append(t)
+
+    groups_total = sum(t.amount for t in expense_txs) + sum(t.amount for t in invest_txs)
 
     groups = []
     for group_name, txs in sorted(group_txs.items(), key=lambda x: sum(t.amount for t in x[1]), reverse=True):
@@ -829,7 +845,7 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
                 "name": group_name,
                 "total": round(total, 2),
                 "count": len(txs),
-                "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
+                "percentage": round((total / groups_total * 100) if groups_total else 0, 1),
                 "transactions": [
                     _tx_summary(t) for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
                 ],
@@ -841,6 +857,7 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
         "year": year,
         "categories": categories,
         "groups": groups,
+        "groups_total": round(groups_total, 2),
         "total_expense": round(total_expense, 2),
         "total_income": round(income_total, 2),
     }
