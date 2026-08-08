@@ -1131,7 +1131,7 @@ function renderReportCatRows(data) {
   };
 
   if (cats.length === 0) {
-    return `<table><tbody><tr><td colspan="3" style="text-align:center;padding:32px;color:#64748B">Sem despesas no período selecionado</td></tr></tbody></table>`;
+    return `<table><tbody><tr><td colspan="4" style="text-align:center;padding:32px;color:#64748B">Sem despesas no período selecionado</td></tr></tbody></table>`;
   }
 
   return `<table>
@@ -1139,6 +1139,7 @@ function renderReportCatRows(data) {
       <tr>
         <th class="cat-sort-th" data-col="name">Categoria ${si('name')}</th>
         <th class="text-right cat-sort-th" data-col="total">Total ${si('total')}</th>
+        <th class="text-right cat-sort-th" data-col="percentage">% Total ${si('percentage')}</th>
         <th class="text-right cat-sort-th" data-col="count">Qtd ${si('count')}</th>
       </tr>
     </thead>
@@ -1158,9 +1159,11 @@ function renderReportCatRows(data) {
         }
         const txRows = txList.map((t) => {
           const dayMonth = t.date ? t.date.slice(8, 10) + '/' + t.date.slice(5, 7) : '—';
+          const txPct = c.total ? (t.amount / c.total * 100) : 0;
           return `<tr>
             <td class="inner-tx-desc">${esc(t.description)}</td>
             <td class="text-right amount-expense">${fmt(t.amount)}</td>
+            <td class="text-right text-muted">${txPct.toFixed(1)}%</td>
             <td class="text-right text-muted">${dayMonth}</td>
             <td class="text-right" style="width:36px;padding-right:12px">
               <button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏</button>
@@ -1174,15 +1177,17 @@ function renderReportCatRows(data) {
             <span class="badge badge-cat">${esc(c.name)}</span>
           </td>
           <td class="text-right amount-expense">${fmt(c.total)}</td>
+          <td class="text-right text-muted">${c.percentage.toFixed(1)}%</td>
           <td class="text-right text-muted">${c.count}</td>
         </tr>
         <tr class="cat-detail-row${isOpen ? '' : ' hidden'}" data-idx-detail="${idx}">
-          <td colspan="3" class="cat-detail-td">
+          <td colspan="4" class="cat-detail-td">
             <table class="inner-tx-table">
               <thead>
                 <tr>
                   <th class="inner-tx-desc">Descrição</th>
                   <th class="text-right inner-sort-th" data-outer-idx="${idx}" data-inner-col="amount">Valor ${innerSi(c.name, 'amount')}</th>
+                  <th class="text-right">% Categoria</th>
                   <th class="text-right inner-sort-th" data-outer-idx="${idx}" data-inner-col="date">Data ${innerSi(c.name, 'date')}</th>
                   <th style="width:36px"></th>
                 </tr>
@@ -1192,6 +1197,7 @@ function renderReportCatRows(data) {
                 <tr>
                   <td class="inner-tx-desc"><strong>Total ${esc(c.name)}</strong></td>
                   <td class="text-right"><strong class="amount-expense">${fmt(c.total)}</strong></td>
+                  <td class="text-right"><strong>100,0%</strong></td>
                   <td></td><td></td>
                 </tr>
               </tfoot>
@@ -1204,6 +1210,7 @@ function renderReportCatRows(data) {
       <tr style="border-top:2px solid #E2E8F0;background:#F8FAFC">
         <td><strong>Total</strong></td>
         <td class="text-right"><strong class="amount-expense">${fmt(data.total_expense)}</strong></td>
+        <td class="text-right"><strong>100,0%</strong></td>
         <td class="text-right"><strong>${data.categories.reduce((s, c) => s + c.count, 0)}</strong></td>
       </tr>
     </tfoot>
