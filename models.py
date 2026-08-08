@@ -12,11 +12,19 @@ class User(Base):
     created_at = Column(DateTime, nullable=True)
 
 
+class Group(Base):
+    __tablename__ = "groups"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, unique=True, nullable=False)
+
+
 class Category(Base):
     __tablename__ = "categories"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, unique=True, nullable=False)
+    group_name = Column(String, nullable=True)
 
 
 class Transaction(Base):

@@ -235,6 +235,25 @@ function closeBanner() {
   document.getElementById('invalid-banner').classList.add('hidden');
 }
 
+function updateGroupBanner(count) {
+  const banner = document.getElementById('group-banner');
+  const text = document.getElementById('group-banner-text');
+  if (count > 0) {
+    text.textContent = `⚠ ${count} categoria${count > 1 ? 's sem grupo' : ' sem grupo'}`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function closeGroupBanner() {
+  document.getElementById('group-banner').classList.add('hidden');
+}
+
+function ungroupedCategoryCount() {
+  return state.categories.filter((c) => !c.group_name).length;
+}
+
 function filterInvalid() {
   state.tx.invalid_only = true;
   state.tx.type = '';
@@ -262,6 +281,7 @@ async function renderView() {
     if (state.view === 'dashboard')    await renderDashboard();
     else if (state.view === 'transactions') await renderTransactions();
     else if (state.view === 'categories')   await renderCategories();
+    else if (state.view === 'groups')       await renderGroups();
     else if (state.view === 'report')       await renderReport();
   } catch (err) {
     main.innerHTML = `<div class="error-state">Erro ao carregar: ${esc(err.message)}</div>`;
@@ -954,8 +974,198 @@ function deleteCategory(id, name, count) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// GRUPOS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function renderGroups() {
+  state.groupsList = await api.get('/api/groups');
+  state.categories = await api.get('/api/categories');
+  updateGroupBanner(ungroupedCategoryCount());
+  renderGroupsView();
+}
+
+function renderGroupsView() {
+  const main = document.getElementById('main-content');
+  const groups = state.groupsList;
+  const cats = [...state.categories].sort((a, b) => {
+    const ag = a.group_name ? 1 : 0;
+    const bg = b.group_name ? 1 : 0;
+    if (ag !== bg) return ag - bg;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
+
+  main.innerHTML = `
+    <div class="view-header">
+      <h1>Grupos</h1>
+      <button class="btn btn-primary btn-sm" onclick="openGroupModal()">+ Novo Grupo</button>
+    </div>
+
+    <div class="table-card">
+      <div style="padding:16px 16px 0"><span class="section-title">Grupos cadastrados</span></div>
+      <div class="cat-list">
+        ${groups.length === 0
+          ? '<div class="empty-state"><span class="empty-icon">🗂️</span><p>Nenhum grupo cadastrado</p></div>'
+          : groups.map((g) => {
+              const count = state.categories.filter((c) => c.group_name === g.name).length;
+              return `
+              <div class="cat-item">
+                <div>
+                  <span class="cat-name">${esc(g.name)}</span>
+                  <span class="cat-count">${count} categoria${count !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="cat-actions">
+                  <button class="btn-icon" onclick="openGroupModal('${g.id}', '${esc(g.name)}')">✏ Renomear</button>
+                  <button class="btn-icon danger" onclick="deleteGroup('${g.id}', '${esc(g.name)}', ${count})">🗑</button>
+                </div>
+              </div>`;
+            }).join('')}
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div style="padding:16px 16px 0"><span class="section-title">Categorias</span></div>
+      <div class="cat-list">
+        ${cats.length === 0
+          ? '<div class="empty-state"><span class="empty-icon">🏷️</span><p>Nenhuma categoria cadastrada</p></div>'
+          : cats.map((c) => `
+            <div class="cat-item">
+              <div>
+                <span class="cat-name">${esc(c.name)}</span>
+                ${!c.group_name ? '<span class="cat-count cat-count-warning">sem grupo</span>' : ''}
+              </div>
+              <select onchange="assignCategoryGroup('${c.id}', this.value)">
+                <option value="" ${!c.group_name ? 'selected' : ''}>— Sem grupo —</option>
+                ${groups.map((g) => `<option value="${esc(g.name)}" ${c.group_name === g.name ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}
+              </select>
+            </div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function openGroupModal(id = '', name = '') {
+  state.editingGroupId = id || null;
+  document.getElementById('group-modal-title').textContent = id ? 'Renomear Grupo' : 'Novo Grupo';
+  document.getElementById('group-name-input').value = name;
+  document.getElementById('group-edit-id').value = id;
+  document.getElementById('group-modal').classList.remove('hidden');
+}
+
+function closeGroupModal() {
+  document.getElementById('group-modal').classList.add('hidden');
+  state.editingGroupId = null;
+}
+
+async function submitGroup(e) {
+  e.preventDefault();
+  const name = document.getElementById('group-name-input').value.trim();
+  const id = document.getElementById('group-edit-id').value;
+  try {
+    if (id) {
+      await api.put(`/api/groups/${id}`, { name });
+      showToast('Grupo renomeado!');
+    } else {
+      await api.post('/api/groups', { name });
+      showToast('Grupo criado!');
+    }
+    closeGroupModal();
+    renderGroups();
+  } catch (err) {
+    showToast('Erro: ' + err.message, 'error');
+  }
+}
+
+function deleteGroup(id, name, count) {
+  const msg = count > 0
+    ? `O grupo "${name}" possui ${count} categoria${count > 1 ? 's' : ''}. Elas ficarão sem grupo.`
+    : `Deseja excluir o grupo "${name}"?`;
+  showConfirm('Excluir Grupo', msg, async () => {
+    await api.del(`/api/groups/${id}`);
+    showToast('Grupo excluído!');
+    renderGroups();
+  });
+}
+
+async function assignCategoryGroup(catId, groupName) {
+  const cat = state.categories.find((c) => c.id === catId);
+  if (!cat) return;
+  const previous = cat.group_name;
+  cat.group_name = groupName || null;
+  updateGroupBanner(ungroupedCategoryCount());
+  renderGroupsView();
+
+  try {
+    await api.put(`/api/categories/${catId}/group`, { group_name: groupName || null });
+  } catch (err) {
+    cat.group_name = previous;
+    updateGroupBanner(ungroupedCategoryCount());
+    renderGroupsView();
+    showToast('Erro: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RELATÓRIO
 // ═══════════════════════════════════════════════════════════════════════════
+
+function renderBreakdownDoughnut(canvasId, items, totalExpense) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const pieColors = [
+    '#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6',
+    '#06B6D4','#F97316','#EC4899','#14B8A6','#6366F1','#84CC16','#E11D48',
+  ];
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: items.map((c) => c.name),
+      datasets: [{
+        data: items.map((c) => c.total),
+        backgroundColor: items.map((_, i) => pieColors[i % pieColors.length]),
+        borderWidth: 2,
+        borderColor: '#fff',
+        hoverOffset: 8,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '58%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            boxWidth: 13,
+            padding: 16,
+            font: { size: 12 },
+            generateLabels: (chart) => {
+              const ds = chart.data.datasets[0];
+              return chart.data.labels.map((label, i) => {
+                const value = ds.data[i];
+                const pct = totalExpense ? ((value / totalExpense) * 100).toFixed(1) : '0.0';
+                return {
+                  text: `${label}  ${fmt(value)}  (${pct}%)`,
+                  fillStyle: ds.backgroundColor[i],
+                  strokeStyle: '#fff',
+                  lineWidth: 2,
+                  index: i,
+                  hidden: false,
+                };
+              });
+            },
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const pct = totalExpense ? ((ctx.raw / totalExpense) * 100).toFixed(1) : 0;
+              return ` ${ctx.label}: ${fmt(ctx.raw)} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
 
 async function renderReport({ preserveState = false } = {}) {
   const { months, year } = state.report;
@@ -1008,9 +1218,13 @@ async function renderReport({ preserveState = false } = {}) {
 
     ${data.categories.length > 0 ? `
     <div class="charts-row" style="margin-bottom:24px">
-      <div class="chart-card" style="grid-column:1/-1">
+      <div class="chart-card">
         <h3>Despesas por Categoria</h3>
         <div class="chart-container" style="height:300px"><canvas id="report-chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Resumo por Grupo</h3>
+        <div class="chart-container" style="height:300px"><canvas id="report-group-chart"></canvas></div>
       </div>
     </div>
     ` : ''}
@@ -1024,63 +1238,12 @@ async function renderReport({ preserveState = false } = {}) {
   `;
 
   if (data.categories.length > 0) {
-    const ctx = document.getElementById('report-chart').getContext('2d');
     if (state.charts.report) state.charts.report.destroy();
-    const pieColors = [
-      '#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6',
-      '#06B6D4','#F97316','#EC4899','#14B8A6','#6366F1','#84CC16','#E11D48',
-    ];
-    state.charts.report = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: data.categories.map((c) => c.name),
-        datasets: [{
-          data: data.categories.map((c) => c.total),
-          backgroundColor: data.categories.map((_, i) => pieColors[i % pieColors.length]),
-          borderWidth: 2,
-          borderColor: '#fff',
-          hoverOffset: 8,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '58%',
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              boxWidth: 13,
-              padding: 16,
-              font: { size: 12 },
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((label, i) => {
-                  const value = ds.data[i];
-                  const pct = data.total_expense ? ((value / data.total_expense) * 100).toFixed(1) : '0.0';
-                  return {
-                    text: `${label}  ${fmt(value)}  (${pct}%)`,
-                    fillStyle: ds.backgroundColor[i],
-                    strokeStyle: '#fff',
-                    lineWidth: 2,
-                    index: i,
-                    hidden: false,
-                  };
-                });
-              },
-            },
-          },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const pct = data.total_expense ? ((ctx.raw / data.total_expense) * 100).toFixed(1) : 0;
-                return ` ${ctx.label}: ${fmt(ctx.raw)} (${pct}%)`;
-              },
-            },
-          },
-        },
-      },
-    });
+    state.charts.report = renderBreakdownDoughnut('report-chart', data.categories, data.total_expense);
+  }
+  if (data.groups && data.groups.length > 0) {
+    if (state.charts.reportGroups) state.charts.reportGroups.destroy();
+    state.charts.reportGroups = renderBreakdownDoughnut('report-group-chart', data.groups, data.total_expense);
   }
 
   document.getElementById('rep-year').addEventListener('change', (e) => {
@@ -1611,16 +1774,18 @@ document.addEventListener('keydown', (e) => {
     closeConfirmModal();
     closeCatModal();
     closeImportModal();
+    closeGroupModal();
   }
 });
 
-['tx-modal', 'confirm-modal', 'cat-modal', 'import-modal'].forEach((id) => {
+['tx-modal', 'confirm-modal', 'cat-modal', 'import-modal', 'group-modal'].forEach((id) => {
   document.getElementById(id).addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
       closeTransactionModal();
       closeConfirmModal();
       closeCatModal();
       closeImportModal();
+      closeGroupModal();
     }
   });
 });
@@ -1646,6 +1811,11 @@ async function init() {
   try {
     const summary = await api.get(`/api/summary?month=${state.dash.month}&year=${state.dash.year}`);
     updateInvalidBanner(summary.invalid_count);
+  } catch (_) {}
+
+  try {
+    state.categories = await api.get('/api/categories');
+    updateGroupBanner(ungroupedCategoryCount());
   } catch (_) {}
 
   navigate('dashboard');

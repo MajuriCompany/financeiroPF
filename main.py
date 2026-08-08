@@ -12,14 +12,34 @@ from fastapi.staticfiles import StaticFiles
 import bcrypt as _bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import extract, func
+from sqlalchemy import extract, func, text
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
-from models import Category, Transaction, User
+from models import Category, Group, Transaction, User
 from importers import normalize_text, parse_card_csv, decode_ofx_bytes, parse_account_ofx
 
 Base.metadata.create_all(bind=engine)
+
+
+def _migrate_schema():
+    """ALTER TABLE manual pra colunas novas em tabelas já existentes — o projeto não
+    usa Alembic, então isso é dívida técnica deliberada. Idempotente e à prova de
+    falha transitória de DDL (não deve derrubar o cold start)."""
+    try:
+        with engine.connect() as conn:
+            if engine.dialect.name == "postgresql":
+                conn.execute(text("ALTER TABLE categories ADD COLUMN IF NOT EXISTS group_name VARCHAR"))
+            else:
+                cols = [row[1] for row in conn.execute(text("PRAGMA table_info(categories)"))]
+                if "group_name" not in cols:
+                    conn.execute(text("ALTER TABLE categories ADD COLUMN group_name VARCHAR"))
+            conn.commit()
+    except Exception:
+        pass
+
+
+_migrate_schema()
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -230,6 +250,15 @@ class CategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
+    group_name: Optional[str] = None
+
+
+class GroupCreate(BaseModel):
+    name: str
+
+
+class CategoryGroupUpdate(BaseModel):
+    group_name: Optional[str] = None
 
 
 class ImportRow(BaseModel):
@@ -404,7 +433,7 @@ async def list_categories(db: Session = Depends(get_db)):
     result = []
     for c in cats:
         count = db.query(Transaction).filter(Transaction.category == c.name).count()
-        result.append({"id": c.id, "name": c.name, "transaction_count": count})
+        result.append({"id": c.id, "name": c.name, "group_name": c.group_name, "transaction_count": count})
     return result
 
 
@@ -520,6 +549,74 @@ async def import_confirm(body: ImportConfirmRequest, db: Session = Depends(get_d
 
     db.commit()
     return {"imported": imported}
+
+
+# ── Groups ───────────────────────────────────────────────────────────────────
+
+
+@app.get("/api/groups")
+async def list_groups(db: Session = Depends(get_db)):
+    groups = db.query(Group).order_by(Group.name).all()
+    result = []
+    for g in groups:
+        count = db.query(Category).filter(Category.group_name == g.name).count()
+        result.append({"id": g.id, "name": g.name, "category_count": count})
+    return result
+
+
+@app.post("/api/groups", status_code=201)
+async def create_group(body: GroupCreate, db: Session = Depends(get_db)):
+    if db.query(Group).filter(Group.name == body.name).first():
+        raise HTTPException(400, "Grupo já existe")
+    g = Group(id=str(uuid.uuid4()), name=body.name)
+    db.add(g)
+    db.commit()
+    db.refresh(g)
+    return {"id": g.id, "name": g.name, "category_count": 0}
+
+
+@app.put("/api/groups/{group_id}")
+async def update_group(group_id: str, body: GroupCreate, db: Session = Depends(get_db)):
+    g = db.query(Group).filter(Group.id == group_id).first()
+    if not g:
+        raise HTTPException(404, "Grupo não encontrado")
+
+    if db.query(Group).filter(Group.name == body.name, Group.id != group_id).first():
+        raise HTTPException(400, "Já existe um grupo com esse nome")
+
+    old_name = g.name
+    g.name = body.name
+    db.query(Category).filter(Category.group_name == old_name).update({"group_name": body.name})
+    db.commit()
+    count = db.query(Category).filter(Category.group_name == body.name).count()
+    return {"id": g.id, "name": g.name, "category_count": count}
+
+
+@app.delete("/api/groups/{group_id}", status_code=204)
+async def delete_group(group_id: str, db: Session = Depends(get_db)):
+    g = db.query(Group).filter(Group.id == group_id).first()
+    if not g:
+        raise HTTPException(404, "Grupo não encontrado")
+
+    db.query(Category).filter(Category.group_name == g.name).update({"group_name": None})
+    db.delete(g)
+    db.commit()
+
+
+@app.put("/api/categories/{cat_id}/group")
+async def set_category_group(cat_id: str, body: CategoryGroupUpdate, db: Session = Depends(get_db)):
+    cat = db.query(Category).filter(Category.id == cat_id).first()
+    if not cat:
+        raise HTTPException(404, "Categoria não encontrada")
+
+    if body.group_name is not None:
+        if not db.query(Group).filter(Group.name == body.group_name).first():
+            raise HTTPException(400, f"Grupo '{body.group_name}' não existe")
+
+    cat.group_name = body.group_name
+    db.commit()
+    count = db.query(Transaction).filter(Transaction.category == cat.name).count()
+    return {"id": cat.id, "name": cat.name, "group_name": cat.group_name, "transaction_count": count}
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -654,7 +751,7 @@ async def get_report(month: int, year: int, db: Session = Depends(get_db)):
 async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)):
     month_list = [int(m.strip()) for m in months.split(",") if m.strip().isdigit()]
     if not month_list:
-        return {"months": [], "year": year, "categories": [], "total_expense": 0.0, "total_income": 0.0}
+        return {"months": [], "year": year, "categories": [], "groups": [], "total_expense": 0.0, "total_income": 0.0}
 
     expense_txs = []
     income_total = 0.0
@@ -715,10 +812,28 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
             }
         )
 
+    cat_to_group = {c.name: c.group_name for c in db.query(Category).all() if c.group_name}
+    group_txs: dict = {}
+    for t in expense_txs:
+        group_txs.setdefault(cat_to_group.get(t.category, "Sem Grupo"), []).append(t)
+
+    groups = []
+    for group_name, txs in sorted(group_txs.items(), key=lambda x: sum(t.amount for t in x[1]), reverse=True):
+        total = sum(t.amount for t in txs)
+        groups.append(
+            {
+                "name": group_name,
+                "total": round(total, 2),
+                "count": len(txs),
+                "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
+            }
+        )
+
     return {
         "months": month_list,
         "year": year,
         "categories": categories,
+        "groups": groups,
         "total_expense": round(total_expense, 2),
         "total_income": round(income_total, 2),
     }

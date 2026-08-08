@@ -608,7 +608,13 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
 .cat-item:hover { background: #FAFBFC; }
 .cat-name { font-weight: 600; font-size: 14px; }
 .cat-count { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+.cat-count-warning { color: var(--yellow-dk); font-weight: 600; }
 .cat-actions { display: flex; gap: 6px; }
+.cat-item select {
+  border: 1px solid var(--border); border-radius: var(--radius-xs);
+  padding: 6px 10px; font-size: 12.5px; background: var(--surface); color: var(--text);
+  min-width: 160px;
+}
 
 /* ── Report View ──────────────────────────────────────────────────────── */
 .report-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }

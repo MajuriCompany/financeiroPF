@@ -65,6 +65,13 @@
       <button onclick="closeBanner()" class="banner-close">✕</button>
     </div>
 
+    <!-- Banner de categorias sem grupo -->
+    <div id="group-banner" class="invalid-banner hidden">
+      <span id="group-banner-text"></span>
+      <button onclick="navigate('groups')" class="banner-btn">Organizar grupos</button>
+      <button onclick="closeGroupBanner()" class="banner-close">✕</button>
+    </div>
+
     <div class="layout">
       <!-- Sidebar -->
       <aside class="sidebar">
@@ -93,6 +100,10 @@
           <a class="nav-item" data-view="categories" onclick="navigate('categories')">
             <svg viewBox="0 0 24 24"><path d="M12 2l-5.5 9h11zm0 3.84L14.6 10H9.4zM17.5 13c-2.49 0-4.5 2.01-4.5 4.5S15.01 22 17.5 22 22 19.99 22 17.5 19.99 13 17.5 13zm0 7c-1.38 0-2.5-1.12-2.5-2.5S16.12 15 17.5 15s2.5 1.12 2.5 2.5S18.88 20 17.5 20zM3 13.5h8v8H3z"/></svg>
             Categorias
+          </a>
+          <a class="nav-item" data-view="groups" onclick="navigate('groups')">
+            <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4zm8-6c1.66 0 3-1.34 3-3s-1.34-3-3-3c-.32 0-.62.05-.91.14a5.98 5.98 0 010 5.72c.29.09.59.14.91.14zm2 2c-.29 0-.83.02-1.42.1 1.06.76 1.42 1.7 1.42 2.9v2h4v-2c0-1.94-3.13-2.83-4-3z"/></svg>
+            Grupos
           </a>
         </nav>
 
@@ -238,6 +249,27 @@
         <input type="hidden" id="cat-edit-id" value="" />
         <div class="modal-footer">
           <button type="button" onclick="closeCatModal()" class="btn btn-ghost">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal de grupo -->
+  <div id="group-modal" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="group-modal-title">Novo Grupo</h2>
+        <button onclick="closeGroupModal()" class="modal-close">✕</button>
+      </div>
+      <form id="group-form" class="modal-body" onsubmit="submitGroup(event)">
+        <div class="form-group full">
+          <label>Nome do Grupo *</label>
+          <input type="text" name="group_name" id="group-name-input" required placeholder="Ex: Custo Fixo" />
+        </div>
+        <input type="hidden" id="group-edit-id" value="" />
+        <div class="modal-footer">
+          <button type="button" onclick="closeGroupModal()" class="btn btn-ghost">Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar</button>
         </div>
       </form>
