@@ -28,7 +28,13 @@ const state = {
     page: 1,
     perPage: 20,
   },
-  report: { months: [now.getMonth() + 1], year: now.getFullYear(), sortBy: 'total', sortDir: 'desc', openCats: new Set(), sortedCats: [], innerSort: {}, data: null },
+  report: {
+    months: [now.getMonth() + 1], year: now.getFullYear(),
+    sortBy: 'total', sortDir: 'desc', openCats: new Set(), sortedCats: [], innerSort: {},
+    groupTable: { sortBy: 'total', sortDir: 'desc', openGroups: new Set(), sortedGroups: [], innerSort: {} },
+    selectedGroup: null,
+    data: null,
+  },
   categories: [],
   invalidCount: 0,
   editingTxId: null,
@@ -1174,6 +1180,8 @@ async function renderReport({ preserveState = false } = {}) {
   if (!preserveState) {
     state.report.openCats = new Set();
     state.report.innerSort = {};
+    state.report.groupTable = { sortBy: 'total', sortDir: 'desc', openGroups: new Set(), sortedGroups: [], innerSort: {} };
+    state.report.selectedGroup = data.groups.length > 0 ? data.groups[0].name : null;
   }
   // Popula cache de transações para o modal de edição
   data.categories.forEach((c) => c.transactions.forEach((t) => { _txCache[t.id] = t; }));
@@ -1226,6 +1234,15 @@ async function renderReport({ preserveState = false } = {}) {
         <h3>Resumo por Grupo</h3>
         <div class="chart-container" style="height:300px"><canvas id="report-group-chart"></canvas></div>
       </div>
+      <div class="chart-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px">
+          <h3 style="margin-bottom:0">Categorias do Grupo</h3>
+          <select id="group-drilldown-select">
+            ${data.groups.map((g) => `<option value="${esc(g.name)}" ${g.name === state.report.selectedGroup ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="chart-container" style="height:300px"><canvas id="report-group-detail-chart"></canvas></div>
+      </div>
     </div>
     ` : ''}
 
@@ -1233,6 +1250,13 @@ async function renderReport({ preserveState = false } = {}) {
       <div style="padding:16px 16px 0"><span class="section-title">Gastos por Categoria</span></div>
       <div class="table-scroll" id="cat-breakdown-body">
         ${renderReportCatRows(data)}
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div style="padding:16px 16px 0"><span class="section-title">Gastos por Grupo</span></div>
+      <div class="table-scroll" id="grp-breakdown-body">
+        ${renderReportGroupRows(data)}
       </div>
     </div>
   `;
@@ -1244,6 +1268,12 @@ async function renderReport({ preserveState = false } = {}) {
   if (data.groups && data.groups.length > 0) {
     if (state.charts.reportGroups) state.charts.reportGroups.destroy();
     state.charts.reportGroups = renderBreakdownDoughnut('report-group-chart', data.groups, data.total_expense);
+
+    renderGroupDrilldownChart(data, state.report.selectedGroup);
+    document.getElementById('group-drilldown-select').addEventListener('change', (e) => {
+      state.report.selectedGroup = e.target.value;
+      renderGroupDrilldownChart(data, state.report.selectedGroup);
+    });
   }
 
   document.getElementById('rep-year').addEventListener('change', (e) => {
@@ -1267,6 +1297,15 @@ async function renderReport({ preserveState = false } = {}) {
   });
 
   attachCatRowListeners();
+  attachGroupRowListeners();
+}
+
+function renderGroupDrilldownChart(data, selectedGroup) {
+  const cats = data.categories.filter((c) => (c.group_name || 'Sem Grupo') === selectedGroup);
+  const subtotal = cats.reduce((s, c) => s + c.total, 0);
+  if (state.charts.groupDrilldown) state.charts.groupDrilldown.destroy();
+  if (cats.length === 0) return;
+  state.charts.groupDrilldown = renderBreakdownDoughnut('report-group-detail-chart', cats, subtotal);
 }
 
 function renderReportCatRows(data) {
@@ -1428,6 +1467,173 @@ function attachCatRowListeners() {
       }
       document.getElementById('cat-breakdown-body').innerHTML = renderReportCatRows(state.report.data);
       attachCatRowListeners();
+    });
+  });
+}
+
+function renderReportGroupRows(data) {
+  const { sortBy, sortDir, openGroups, innerSort } = state.report.groupTable;
+
+  const groups = [...data.groups].sort((a, b) => {
+    let va = a[sortBy], vb = b[sortBy];
+    if (sortBy === 'name') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  state.report.groupTable.sortedGroups = groups;
+
+  const si = (col) => {
+    if (state.report.groupTable.sortBy !== col) return '<span class="sort-icon">↕</span>';
+    return `<span class="sort-icon active">${state.report.groupTable.sortDir === 'asc' ? '↑' : '↓'}</span>`;
+  };
+
+  const innerSi = (groupName, col) => {
+    const s = innerSort[groupName];
+    if (!s || s.col !== col) return '<span class="sort-icon">↕</span>';
+    return `<span class="sort-icon active">${s.dir === 'asc' ? '↑' : '↓'}</span>`;
+  };
+
+  if (groups.length === 0) {
+    return `<table><tbody><tr><td colspan="4" style="text-align:center;padding:32px;color:#64748B">Sem despesas no período selecionado</td></tr></tbody></table>`;
+  }
+
+  return `<table>
+    <thead>
+      <tr>
+        <th class="grp-sort-th" data-col="name">Grupo ${si('name')}</th>
+        <th class="text-right grp-sort-th" data-col="total">Total ${si('total')}</th>
+        <th class="text-right grp-sort-th" data-col="percentage">% Total ${si('percentage')}</th>
+        <th class="text-right grp-sort-th" data-col="count">Qtd ${si('count')}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${groups.map((g, idx) => {
+        const isOpen = openGroups.has(g.name);
+        const iSort = innerSort[g.name];
+        let txList = [...g.transactions];
+        if (iSort) {
+          txList.sort((a, b) => {
+            const va = a[iSort.col] ?? '';
+            const vb = b[iSort.col] ?? '';
+            if (va < vb) return iSort.dir === 'asc' ? -1 : 1;
+            if (va > vb) return iSort.dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+        }
+        const txRows = txList.map((t) => {
+          const dayMonth = t.date ? t.date.slice(8, 10) + '/' + t.date.slice(5, 7) : '—';
+          const txPct = g.total ? (t.amount / g.total * 100) : 0;
+          return `<tr>
+            <td class="inner-tx-desc">${esc(t.description)}</td>
+            <td><span class="badge badge-cat">${esc(t.category)}</span></td>
+            <td class="text-right amount-expense">${fmt(t.amount)}</td>
+            <td class="text-right text-muted">${txPct.toFixed(1)}%</td>
+            <td class="text-right text-muted">${dayMonth}</td>
+            <td class="text-right" style="width:36px;padding-right:12px">
+              <button class="btn-icon" title="Editar" onclick="editTransaction('${t.id}')">✏</button>
+            </td>
+          </tr>`;
+        }).join('');
+        return `
+        <tr class="grp-row" data-idx="${idx}">
+          <td>
+            <span class="grp-toggle${isOpen ? ' open' : ''}">▶</span>
+            <span class="badge badge-cat">${esc(g.name)}</span>
+          </td>
+          <td class="text-right amount-expense">${fmt(g.total)}</td>
+          <td class="text-right text-muted">${g.percentage.toFixed(1)}%</td>
+          <td class="text-right text-muted">${g.count}</td>
+        </tr>
+        <tr class="grp-detail-row${isOpen ? '' : ' hidden'}" data-idx-detail="${idx}">
+          <td colspan="4" class="cat-detail-td">
+            <table class="inner-tx-table">
+              <thead>
+                <tr>
+                  <th class="inner-tx-desc">Descrição</th>
+                  <th>Categoria</th>
+                  <th class="text-right grp-inner-sort-th" data-outer-idx="${idx}" data-inner-col="amount">Valor ${innerSi(g.name, 'amount')}</th>
+                  <th class="text-right">% Grupo</th>
+                  <th class="text-right grp-inner-sort-th" data-outer-idx="${idx}" data-inner-col="date">Data ${innerSi(g.name, 'date')}</th>
+                  <th style="width:36px"></th>
+                </tr>
+              </thead>
+              <tbody>${txRows}</tbody>
+              <tfoot>
+                <tr>
+                  <td class="inner-tx-desc"><strong>Total ${esc(g.name)}</strong></td>
+                  <td></td>
+                  <td class="text-right"><strong class="amount-expense">${fmt(g.total)}</strong></td>
+                  <td class="text-right"><strong>100,0%</strong></td>
+                  <td></td><td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="border-top:2px solid #E2E8F0;background:#F8FAFC">
+        <td><strong>Total</strong></td>
+        <td class="text-right"><strong class="amount-expense">${fmt(data.total_expense)}</strong></td>
+        <td class="text-right"><strong>100,0%</strong></td>
+        <td class="text-right"><strong>${data.groups.reduce((s, g) => s + g.count, 0)}</strong></td>
+      </tr>
+    </tfoot>
+  </table>`;
+}
+
+function attachGroupRowListeners() {
+  document.querySelectorAll('.grp-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const idx = +row.dataset.idx;
+      const groupName = state.report.groupTable.sortedGroups[idx].name;
+      const detailRow = document.querySelector(`.grp-detail-row[data-idx-detail="${idx}"]`);
+      const toggle = row.querySelector('.grp-toggle');
+      if (!detailRow) return;
+      if (state.report.groupTable.openGroups.has(groupName)) {
+        state.report.groupTable.openGroups.delete(groupName);
+        detailRow.classList.add('hidden');
+        toggle.classList.remove('open');
+      } else {
+        state.report.groupTable.openGroups.add(groupName);
+        detailRow.classList.remove('hidden');
+        toggle.classList.add('open');
+      }
+    });
+  });
+
+  document.querySelectorAll('.grp-sort-th').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      const gt = state.report.groupTable;
+      if (gt.sortBy === col) {
+        gt.sortDir = gt.sortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        gt.sortBy = col;
+        gt.sortDir = col === 'name' ? 'asc' : 'desc';
+      }
+      document.getElementById('grp-breakdown-body').innerHTML = renderReportGroupRows(state.report.data);
+      attachGroupRowListeners();
+    });
+  });
+
+  document.querySelectorAll('.grp-inner-sort-th').forEach((th) => {
+    th.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const outerIdx = +th.dataset.outerIdx;
+      const groupName = state.report.groupTable.sortedGroups[outerIdx].name;
+      const col = th.dataset.innerCol;
+      const curr = state.report.groupTable.innerSort[groupName];
+      if (curr && curr.col === col) {
+        state.report.groupTable.innerSort[groupName] = { col, dir: curr.dir === 'desc' ? 'asc' : 'desc' };
+      } else {
+        state.report.groupTable.innerSort[groupName] = { col, dir: 'desc' };
+      }
+      document.getElementById('grp-breakdown-body').innerHTML = renderReportGroupRows(state.report.data);
+      attachGroupRowListeners();
     });
   });
 }

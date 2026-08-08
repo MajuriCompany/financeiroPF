@@ -715,9 +715,9 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
 .month-pill:hover { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
 .month-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
 
-/* ── Category Accordion ───────────────────────────────────────────────── */
-.cat-row { cursor: pointer; }
-.cat-toggle {
+/* ── Category / Group Accordion ──────────────────────────────────────── */
+.cat-row, .grp-row { cursor: pointer; }
+.cat-toggle, .grp-toggle {
   display: inline-block;
   font-size: 9px;
   margin-right: 7px;
@@ -725,10 +725,10 @@ td { padding: 12px 16px; vertical-align: middle; font-size: 13px; }
   transition: transform 0.15s;
   vertical-align: middle;
 }
-.cat-toggle.open { transform: rotate(90deg); }
+.cat-toggle.open, .grp-toggle.open { transform: rotate(90deg); }
 .cat-detail-td { padding: 0 !important; background: #FAFBFC; }
-.cat-sort-th { cursor: pointer; user-select: none; }
-.cat-sort-th:hover { color: var(--primary); }
+.cat-sort-th, .grp-sort-th { cursor: pointer; user-select: none; }
+.cat-sort-th:hover, .grp-sort-th:hover { color: var(--primary); }
 .sort-icon { font-size: 10px; color: var(--text-muted); margin-left: 3px; }
 .sort-icon.active { color: var(--primary); }
 

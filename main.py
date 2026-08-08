@@ -781,6 +781,22 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
 
     total_expense = sum(t.amount for t in expense_txs)
 
+    def _tx_summary(t):
+        return {
+            "id": t.id,
+            "description": t.description,
+            "amount": round(t.amount, 2),
+            "date": t.date.isoformat() if t.date else None,
+            "type": t.type,
+            "category": t.category,
+            "responsible": t.responsible,
+            "payment_method": t.payment_method,
+            "notes": t.notes,
+            "amount_invalid": t.amount_invalid,
+        }
+
+    cat_to_group = {c.name: c.group_name for c in db.query(Category).all() if c.group_name}
+
     cat_txs: dict = {}
     for t in expense_txs:
         cat_txs.setdefault(t.category, []).append(t)
@@ -791,28 +807,16 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
         categories.append(
             {
                 "name": cat,
+                "group_name": cat_to_group.get(cat),
                 "total": round(total, 2),
                 "count": len(txs),
                 "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
                 "transactions": [
-                    {
-                        "id": t.id,
-                        "description": t.description,
-                        "amount": round(t.amount, 2),
-                        "date": t.date.isoformat() if t.date else None,
-                        "type": t.type,
-                        "category": t.category,
-                        "responsible": t.responsible,
-                        "payment_method": t.payment_method,
-                        "notes": t.notes,
-                        "amount_invalid": t.amount_invalid,
-                    }
-                    for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
+                    _tx_summary(t) for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
                 ],
             }
         )
 
-    cat_to_group = {c.name: c.group_name for c in db.query(Category).all() if c.group_name}
     group_txs: dict = {}
     for t in expense_txs:
         group_txs.setdefault(cat_to_group.get(t.category, "Sem Grupo"), []).append(t)
@@ -826,6 +830,9 @@ async def get_report_multi(months: str, year: int, db: Session = Depends(get_db)
                 "total": round(total, 2),
                 "count": len(txs),
                 "percentage": round((total / total_expense * 100) if total_expense else 0, 1),
+                "transactions": [
+                    _tx_summary(t) for t in sorted(txs, key=lambda t: t.date or DateT.min, reverse=True)
+                ],
             }
         )
 
